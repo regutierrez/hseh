@@ -1,5 +1,7 @@
 # hseh
 
+i slopped this one up entirely. you have been warned.
+
 i miss [sesh](https://github.com/joshmedeski/sesh) so i made a shittier one for herdr.
 
 standalone linux herdr space/agent picker. fuzzy search, live previews, git branch/status, reusable spaces. only spaces and agents.
