@@ -110,9 +110,11 @@ func withFocusHistoryLock(stateDir string, fn func() error) error {
 		return fmt.Errorf("hseh history: lock: %w", err)
 	}
 	defer file.Close()
+	lockSpan := traceSpan("history.flock")
 	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
 		return fmt.Errorf("hseh history: flock: %w", err)
 	}
+	lockSpan()
 	return fn()
 }
 

@@ -8,36 +8,46 @@ import (
 	"github.com/charmbracelet/x/ansi"
 )
 
-func hasGraySelectedLabel(view, label string) bool {
+// hasRailSelectedLabel reports whether a rendered line carrying the label starts with the selection rail.
+func hasRailSelectedLabel(view, label string) bool {
 	for _, line := range strings.Split(view, "\n") {
-		if strings.Contains(line, pickerSelectedBackground) && strings.Contains(StripTerminalControls(line), label) {
+		plain := StripTerminalControls(line)
+		if strings.HasPrefix(plain, pickerSelectionRail) && strings.Contains(plain, label) {
 			return true
 		}
 	}
 	return false
 }
 
-func TestSelectedBlockHasGrayBackground(t *testing.T) {
+func TestSelectedBlockHasRailAndBoldLabelNotBackground(t *testing.T) {
 	m := pickerModel{selectedID: "a", visible: []PickerItem{{ID: "a", DisplayRows: []string{"\x1b[31malpha\x1b[0m", "detail"}}, {ID: "b", Rows: []string{"beta"}}}}
 	layout := m.buildPickerListLayout(20, 6)
 	selected, other := 0, 0
 	for i, id := range layout.ItemIDs {
+		line := layout.Lines[i]
+		if strings.Contains(line, "\x1b[48;") {
+			t.Fatalf("row background used: %q", line)
+		}
 		if id == "a" {
 			selected++
-			if !strings.Contains(layout.Lines[i], "\x1b[48;5;243m") {
-				t.Fatalf("selected row lacks gray background: %q", layout.Lines[i])
+			plain := StripTerminalControls(line)
+			if !strings.HasPrefix(plain, pickerSelectionRail+" ") {
+				t.Fatalf("selected row lacks rail: %q", line)
 			}
-			if ansi.StringWidth(layout.Lines[i]) != 20 {
-				t.Fatalf("selected background width: %q", layout.Lines[i])
+			if strings.Contains(plain, "alpha") && !strings.Contains(line, "\x1b[1m") {
+				t.Fatalf("selected primary label not bold: %q", line)
 			}
-		} else if strings.Contains(layout.Lines[i], "\x1b[48;5;243m") {
-			t.Fatalf("highlight leaked beyond selected block: %q", layout.Lines[i])
+			if ansi.StringWidth(line) != 20 {
+				t.Fatalf("selected row width: %q", line)
+			}
+		} else if strings.HasPrefix(StripTerminalControls(line), pickerSelectionRail) {
+			t.Fatalf("rail leaked beyond selected block: %q", line)
 		}
 		if id == "b" {
 			other++
 		}
 	}
-	if selected == 0 || other == 0 {
+	if selected != 2 || other == 0 {
 		t.Fatalf("expected both blocks, ids=%v", layout.ItemIDs)
 	}
 	if strings.Contains(StripTerminalControls(strings.Join(layout.Lines, "\n")), "> ") {
@@ -46,7 +56,7 @@ func TestSelectedBlockHasGrayBackground(t *testing.T) {
 }
 
 func TestLivePreviewCropsGridToBottomWithoutReflow(t *testing.T) {
-	m := pickerModel{previewPane: "w1:p1", previewText: "TOP" + strings.Repeat(" ", 77) + "\nMIDDLE" + strings.Repeat(" ", 74) + "\nLAST" + strings.Repeat(" ", 76) + "\n"}
+	m := pickerModel{previewPane: "w1:p1", previewTextLive: true, previewText: "TOP" + strings.Repeat(" ", 77) + "\nMIDDLE" + strings.Repeat(" ", 74) + "\nLAST" + strings.Repeat(" ", 76) + "\n"}
 	got := StripTerminalControls(m.renderPreview(12, 2))
 	lines := strings.Split(got, "\n")
 	if len(lines) != 2 || !strings.HasPrefix(lines[0], "MIDDLE") || !strings.HasPrefix(lines[1], "LAST") {
@@ -55,7 +65,7 @@ func TestLivePreviewCropsGridToBottomWithoutReflow(t *testing.T) {
 }
 
 func TestLivePreviewPreservesSGRAcrossClippedRows(t *testing.T) {
-	m := pickerModel{previewPane: "w1:p1", previewText: "\x1b[31mTOP\n中文LAST\n"}
+	m := pickerModel{previewPane: "w1:p1", previewTextLive: true, previewText: "\x1b[31mTOP\n中文LAST\n"}
 	got := m.renderPreview(6, 1)
 	if !strings.Contains(got, "\x1b[31m") || ansi.StringWidth(got) != 6 || !strings.HasSuffix(got, "\x1b[0m") {
 		t.Fatalf("style/cell boundary broken: %q", got)
@@ -86,7 +96,7 @@ func TestViewTabsTrackKeyboardCycle(t *testing.T) {
 		if strings.Contains(plain, " All") {
 			t.Fatalf("All tab still present: %q", got)
 		}
-		if !strings.Contains(got, "\x1b[48;5;74m\x1b[30m "+want+" ") {
+		if !strings.Contains(got, m.th().TabActive+" "+want+" ") {
 			t.Fatalf("active tab not %s: %q", want, got)
 		}
 		if m.itemIDAtMouse(0, 0) != "" {

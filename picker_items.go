@@ -31,6 +31,8 @@ type PickerItem struct {
 	SearchText   string   `json:"-"`
 	PreviewPane  string   `json:"-"`
 	PreviewText  string   `json:"-"`
+	// Matches are byte offsets into SearchText matched by the current query, used for highlighting.
+	Matches []int `json:"-"`
 }
 
 // PickerListDocument is the public JSON listing shape.
@@ -272,26 +274,39 @@ func firstNonEmpty(values ...string) string {
 
 // FilterPickerItems ranks matching items by fuzzy quality, then original order.
 func FilterPickerItems(items []PickerItem, query string) []PickerItem {
+	filtered, _ := filterPickerItemsInto(nil, nil, items, query)
+	return filtered
+}
+
+// filterPickerItemsInto appends matches to dst (reusing its backing array) and reuses
+// the search-target scratch slice so per-keystroke filtering does not reallocate.
+func filterPickerItemsInto(dst []PickerItem, scratch []string, items []PickerItem, query string) ([]PickerItem, []string) {
 	query = strings.TrimSpace(query)
+	dst = dst[:0]
 	if query == "" {
-		return items
+		dst = append(dst, items...)
+		for i := range dst {
+			dst[i].Matches = nil
+		}
+		return dst, scratch
 	}
-	targets := make([]string, len(items))
-	for i, item := range items {
-		targets[i] = item.SearchText
+	scratch = scratch[:0]
+	for _, item := range items {
+		scratch = append(scratch, item.SearchText)
 	}
-	matches := fuzzy.Find(query, targets)
+	matches := fuzzy.Find(query, scratch)
 	sort.SliceStable(matches, func(i, j int) bool {
 		if matches[i].Score != matches[j].Score {
 			return matches[i].Score > matches[j].Score
 		}
 		return matches[i].Index < matches[j].Index
 	})
-	var filtered []PickerItem
 	for _, match := range matches {
-		filtered = append(filtered, items[match.Index])
+		item := items[match.Index]
+		item.Matches = match.MatchedIndexes
+		dst = append(dst, item)
 	}
-	return filtered
+	return dst, scratch
 }
 
 func encodePickerListJSON(doc PickerListDocument) ([]byte, error) {

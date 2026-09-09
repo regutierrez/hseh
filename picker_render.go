@@ -4,6 +4,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -11,47 +12,154 @@ import (
 
 const pickerTabRows = 1
 const pickerSearchRows = 3
+const pickerFooterRows = 1
 
-// Search box colors match Catppuccin peach/mauve without recoloring the rest of the picker.
-const pickerSearchBorderColor = "\x1b[38;2;250;179;135m" // #fab387
-const pickerSearchPromptColor = "\x1b[38;2;203;166;247m" // #cba6f7
-const pickerSearchCountColor = "\x1b[38;2;127;132;156m"  // #7f849c
+// Layout minimums. Side-by-side needs room for both panes; stacked needs a few list rows plus a short preview.
+const (
+	pickerMinListWidth       = 20
+	pickerMinPreviewWidth    = 20
+	pickerMinStackedListRows = 3
+	pickerMinStackedPreview  = 3
+	pickerMaxStackedPreview  = 8
+	pickerMinFooterHeight    = 6
+)
 
 const pickerSearchTitle = " Search "
 const pickerSearchPrompt = "❯"
+const pickerSelectionRail = "┃"
+const pickerRailWidth = 2
 
-const pickerSelectedBackground = "\x1b[48;5;243m"
-const pickerActiveTabBackground = "\x1b[48;5;74m"
+const pickerHelpText = "↑↓ move · tab view · enter open · esc close"
+
+const (
+	pickerCopyLoading        = "Loading…"
+	pickerCopyLoadFailed     = "Could not load Herdr session"
+	pickerCopyNoSpaces       = "No spaces open"
+	pickerCopyNoAgents       = "No agents open"
+	pickerCopyNoResults      = "No results"
+	pickerCopyLoadingPreview = "Loading preview…"
+	pickerCopyNoPreview      = "No preview"
+	pickerCopyPreviewFailed  = "Preview unavailable"
+)
 
 var pickerSGRPattern = regexp.MustCompile(`\x1b\[[0-9:;]*m`)
 
+type previewMode int
+
+const (
+	previewHidden previewMode = iota
+	previewSide
+	previewStacked
+)
+
+// pickerFrame is the resolved screen geometry for one size. Every renderer and the
+// mouse hit-tester read from it so they cannot disagree.
+type pickerFrame struct {
+	mode                                   previewMode
+	listY, listW, listH                    int
+	searchY, searchW, searchH              int
+	dividerX                               int
+	stackDividerY                          int
+	previewX, previewY, previewW, previewH int
+	footerY                                int
+}
+
+func (m pickerModel) frame() pickerFrame {
+	width := max(1, m.width)
+	height := max(0, m.height)
+	f := pickerFrame{mode: previewHidden, footerY: -1, listY: pickerTabRows, listW: width, searchW: width}
+	if height <= pickerTabRows {
+		return f
+	}
+	footer := 0
+	if height >= pickerMinFooterHeight {
+		footer = pickerFooterRows
+		f.footerY = height - 1
+	}
+	rest := height - pickerTabRows - footer
+	search := min(pickerSearchRows, rest-1)
+	if search < 0 {
+		search = 0
+	}
+	f.searchH = search
+	f.listH = rest - search
+	f.searchY = pickerTabRows + f.listH
+	if m.widePreviewMinCols > 0 && width >= m.widePreviewMinCols && width >= pickerMinListWidth+1+pickerMinPreviewWidth {
+		listW := m.splitListWidth
+		if listW <= 0 {
+			listW = width / 2
+		}
+		lo, hi := m.splitListBounds()
+		listW = min(max(listW, lo), hi)
+		f.mode = previewSide
+		f.listW = listW
+		f.searchW = listW
+		f.dividerX = listW
+		f.previewX = listW + 1
+		f.previewW = width - listW - 1
+		f.previewY = pickerTabRows
+		f.previewH = rest
+		return f
+	}
+	if width >= pickerMinListWidth {
+		available := rest - search - 1
+		previewH := min(pickerMaxStackedPreview, max(pickerMinStackedPreview, available/3))
+		listH := available - previewH
+		if listH >= pickerMinStackedListRows && previewH >= pickerMinStackedPreview {
+			f.mode = previewStacked
+			f.listH = listH
+			f.searchY = pickerTabRows + listH
+			f.stackDividerY = f.searchY + search
+			f.previewX = 0
+			f.previewY = f.stackDividerY + 1
+			f.previewW = width
+			f.previewH = previewH
+		}
+	}
+	return f
+}
+
+// splitListBounds clamps the side-by-side list width so both panes keep a readable minimum.
+func (m pickerModel) splitListBounds() (lo, hi int) {
+	width := max(1, m.width)
+	lo = pickerMinListWidth
+	hi = width - 1 - pickerMinPreviewWidth
+	if hi < lo {
+		lo, hi = width/2, width/2
+	}
+	return lo, hi
+}
+
 func (m pickerModel) renderTabs() string {
+	th := m.th()
 	var tabs []string
 	for _, tab := range []struct{ view, label string }{
 		{pickerViewSpaces, "Spaces"}, {pickerViewAgents, "Agents"},
 	} {
 		label := " " + tab.label + " "
 		if tab.view == m.view {
-			label = pickerActiveTabBackground + "\x1b[30m" + label + "\x1b[0m"
+			label = th.TabActive + label + "\x1b[0m"
+		} else {
+			label = th.Muted + label + "\x1b[0m"
 		}
 		tabs = append(tabs, label)
 	}
 	return padDisplayWidth(strings.Join(tabs, " "), m.width) + "\x1b[0m"
 }
 
-// searchPaneHeight is the footer rows occupied by the rounded search box, clipped to the terminal.
+// searchPaneHeight is the rows occupied by the rounded search box, clipped to the terminal.
 func (m pickerModel) searchPaneHeight() int {
-	available := m.height - pickerTabRows
-	if available < 1 {
-		return 0
-	}
-	if available > pickerSearchRows {
-		return pickerSearchRows
-	}
-	return available
+	return m.frame().searchH
 }
 
-// renderSearch draws the bottom-left rounded search box: Search title, purple prompt, caret, and matched/total count.
+func (m pickerModel) footerHeight() int {
+	if m.frame().footerY < 0 {
+		return 0
+	}
+	return pickerFooterRows
+}
+
+// renderSearch draws the rounded search box: Search title, prompt, caret, and matched/total count.
 func (m pickerModel) renderSearch(width int) string {
 	height := m.searchPaneHeight()
 	if height < 1 {
@@ -64,10 +172,8 @@ func (m pickerModel) renderSearch(width int) string {
 }
 
 func (m pickerModel) searchBoxLines(width, height int) []string {
+	th := m.th()
 	minInput := ansi.StringWidth(pickerSearchPrompt) + 2 // prompt, space, caret
-	if m.statusErr != "" {
-		minInput = 1
-	}
 	if minInput > width {
 		minInput = width
 	}
@@ -87,7 +193,7 @@ func (m pickerModel) searchBoxLines(width, height int) []string {
 	input := m.searchInputLine(inputInner)
 	if drawBox {
 		pad := strings.Repeat(" ", sidePad)
-		input = padDisplayWidth(pickerSearchBorderColor+"│\x1b[0m"+pad+input+pad+pickerSearchBorderColor+"│\x1b[0m", width)
+		input = padDisplayWidth(th.Accent+"│\x1b[0m"+pad+input+pad+th.Accent+"│\x1b[0m", width)
 	}
 	lines := make([]string, height)
 	for i := range lines {
@@ -103,15 +209,15 @@ func (m pickerModel) searchBoxLines(width, height int) []string {
 		if ansi.StringWidth(pickerSearchTitle) <= borderInner {
 			title = pickerSearchTitle
 		}
-		lines[0] = searchHorizontalBorder("╭", "╮", borderInner, title, width)
+		lines[0] = searchHorizontalBorder(th.Accent, "╭", "╮", borderInner, title, width)
 		if height >= 3 {
-			lines[height-1] = searchHorizontalBorder("╰", "╯", borderInner, "", width)
+			lines[height-1] = searchHorizontalBorder(th.Accent, "╰", "╯", borderInner, "", width)
 		}
 	}
 	return lines
 }
 
-func searchHorizontalBorder(left, right string, inner int, title string, width int) string {
+func searchHorizontalBorder(color, left, right string, inner int, title string, width int) string {
 	var b strings.Builder
 	b.WriteString(left)
 	if title != "" && inner >= ansi.StringWidth(title) {
@@ -124,84 +230,61 @@ func searchHorizontalBorder(left, right string, inner int, title string, width i
 		b.WriteString(strings.Repeat("─", inner))
 	}
 	b.WriteString(right)
-	return padDisplayWidth(pickerSearchBorderColor+b.String()+"\x1b[0m", width)
+	return padDisplayWidth(color+b.String()+"\x1b[0m", width)
 }
 
+// searchInputLine always shows the query; errors live in the footer, never here.
 func (m pickerModel) searchInputLine(width int) string {
 	if width < 1 {
 		return ""
 	}
+	th := m.th()
 	text := m.query
-	keepTail := true
-	wantPrompt := true
-	wantCaret := true
-	if m.statusErr != "" {
-		text = strings.ReplaceAll(strings.ReplaceAll(m.statusErr, "\n", " "), "\t", " ")
-		keepTail = false
-		wantPrompt = false
-		wantCaret = false
-	}
 	count := strconv.Itoa(len(m.visible)) + " / " + strconv.Itoa(len(m.allItems))
 	countWidth := ansi.StringWidth(count)
 	promptWidth := ansi.StringWidth(pickerSearchPrompt) + 1
-	wantCount := true
-	fits := func() bool {
-		need := 0
+	wantPrompt, wantCaret, wantCount := true, true, true
+	need := func() int {
+		n := 0
 		if wantPrompt {
-			need += promptWidth
+			n += promptWidth
 		}
 		if wantCaret {
-			need++
+			n++
 		}
 		if wantCount {
-			need += 1 + countWidth
+			n += 1 + countWidth
 		}
-		return need <= width
+		return n
 	}
-	if !fits() {
+	if need() > width {
 		wantCount = false
 	}
-	if !fits() {
+	if need() > width {
 		wantPrompt = false
 	}
-	if !fits() {
+	if need() > width {
 		wantCaret = false
 	}
-	need := 0
-	if wantPrompt {
-		need += promptWidth
-	}
-	if wantCaret {
-		need++
-	}
-	if wantCount {
-		need += 1 + countWidth
-	}
-	textBudget := width - need
-	if textBudget < 0 {
-		textBudget = 0
-	}
-	visibleText := clipSearchText(text, textBudget, keepTail)
-	padW := width - need - ansi.StringWidth(visibleText)
-	if padW < 0 {
-		padW = 0
-	}
+	textBudget := max(0, width-need())
+	visibleText := clipSearchText(text, textBudget, true)
+	padW := max(0, width-need()-ansi.StringWidth(visibleText))
 	var b strings.Builder
 	if wantPrompt {
-		b.WriteString(pickerSearchPromptColor)
+		b.WriteString(th.Mauve)
 		b.WriteString(pickerSearchPrompt)
 		b.WriteString("\x1b[0m ")
 	}
 	b.WriteString(visibleText)
 	if wantCaret {
-		b.WriteString(pickerSearchPromptColor + "▏\x1b[0m")
+		b.WriteString(th.Mauve + "▏\x1b[0m")
 	}
 	if padW > 0 {
 		b.WriteString(strings.Repeat(" ", padW))
 	}
 	if wantCount {
 		b.WriteString(" ")
-		b.WriteString(pickerSearchCountColor)
+		b.WriteString(th.Overlay)
 		b.WriteString(count)
 		b.WriteString("\x1b[0m")
 	}
@@ -230,71 +313,102 @@ func clipSearchText(s string, width int, keepTail bool) string {
 	return clipped
 }
 
+// renderFooter shows key help, plus a status. Errors are primary and win over help when
+// space is tight; a secondary informational status is dropped before key help.
+func (m pickerModel) renderFooter(width int) string {
+	if width < 1 {
+		return ""
+	}
+	th := m.th()
+	help := pickerHelpText
+	helpW := ansi.StringWidth(help)
+	if m.statusErr != "" {
+		errText := strings.ReplaceAll(strings.ReplaceAll(m.statusErr, "\n", " "), "\t", " ")
+		errW := ansi.StringWidth(errText)
+		if errW+2+helpW <= width {
+			gap := width - errW - helpW
+			return padDisplayWidth(th.Red+errText+"\x1b[0m"+strings.Repeat(" ", gap)+th.Muted+help+"\x1b[0m", width)
+		}
+		return padDisplayWidth(th.Red+ansi.Truncate(errText, width, "…")+"\x1b[0m", width)
+	}
+	status := m.secondaryStatus()
+	statusW := ansi.StringWidth(status)
+	if status != "" && statusW+2+helpW <= width {
+		gap := width - statusW - helpW
+		return padDisplayWidth(th.Muted+status+"\x1b[0m"+strings.Repeat(" ", gap)+th.Muted+help+"\x1b[0m", width)
+	}
+	return padDisplayWidth(th.Muted+ansi.Truncate(help, width, "…")+"\x1b[0m", width)
+}
+
+func (m pickerModel) secondaryStatus() string {
+	switch {
+	case !m.snapshotReady:
+		return "Loading Herdr session…"
+	case !m.catalogReady:
+		return "Loading definitions…"
+	}
+	return ""
+}
+
 func (m pickerModel) View() string {
 	if m.width == 0 {
 		return "hseh"
 	}
+	return m.renderView()
+}
+
+func (m pickerModel) renderView() (out string) {
+	span := traceSpan("view")
+	defer func() { span("bytes", len(out)) }()
+	f := m.frame()
 	tabs := m.renderTabs()
 	if m.height > 0 && m.height <= pickerTabRows {
 		return tabs
 	}
-	listWidth := m.listPaneWidth()
-	showPreview := m.wideEnoughForPreview()
-	searchRows := m.searchPaneHeight()
-	listHeight := m.height - pickerTabRows - searchRows
-	if listHeight < 0 {
-		listHeight = 0
-	}
-	searchWidth := listWidth
-	if !showPreview {
-		searchWidth = m.width
-		if searchWidth < 1 {
-			searchWidth = 1
-		}
-	}
-	search := m.renderSearch(searchWidth)
-	if !showPreview {
-		var parts []string
-		parts = append(parts, tabs)
-		if listHeight > 0 {
-			parts = append(parts, m.renderList(listWidth, listHeight))
-		}
-		if m.height > pickerTabRows {
-			parts = append(parts, search)
-		}
-		return strings.Join(parts, "\n")
-	}
-	previewWidth := m.width - listWidth - 1
-	if previewWidth < 1 {
-		previewWidth = 1
-	}
-	previewHeight := m.previewBodyHeight()
-	preview := m.renderPreview(previewWidth, previewHeight)
-	var listLines []string
-	if listHeight > 0 {
-		listLines = strings.Split(m.renderList(listWidth, listHeight), "\n")
-	}
-	prevLines := strings.Split(preview, "\n")
-	searchLines := strings.Split(search, "\n")
+	th := m.th()
+	search := m.renderSearch(f.searchW)
 	var lines []string
-	for i := 0; i < previewHeight; i++ {
-		left, right := "", ""
-		if i < listHeight {
-			if i < len(listLines) {
-				left = listLines[i]
-			}
-		} else {
-			si := i - listHeight
-			if si >= 0 && si < len(searchLines) {
+	lines = append(lines, tabs)
+	switch f.mode {
+	case previewSide:
+		var listLines, searchLines, prevLines []string
+		if f.listH > 0 {
+			listLines = strings.Split(m.renderList(f.listW, f.listH), "\n")
+		}
+		if f.searchH > 0 {
+			searchLines = strings.Split(search, "\n")
+		}
+		prevLines = strings.Split(m.renderPreview(f.previewW, f.previewH), "\n")
+		for i := 0; i < f.previewH; i++ {
+			left, right := "", ""
+			if i < f.listH {
+				if i < len(listLines) {
+					left = listLines[i]
+				}
+			} else if si := i - f.listH; si >= 0 && si < len(searchLines) {
 				left = searchLines[si]
 			}
+			if i < len(prevLines) {
+				right = prevLines[i]
+			}
+			lines = append(lines, padDisplayWidth(left, f.listW)+th.Overlay+"│\x1b[0m"+padDisplayWidth(right, f.previewW))
 		}
-		if i < len(prevLines) {
-			right = prevLines[i]
+	default:
+		if f.listH > 0 {
+			lines = append(lines, strings.Split(m.renderList(f.listW, f.listH), "\n")...)
 		}
-		lines = append(lines, padDisplayWidth(left, listWidth)+pickerMuted+"│\x1b[0m"+padDisplayWidth(right, previewWidth))
+		if f.searchH > 0 {
+			lines = append(lines, strings.Split(search, "\n")...)
+		}
+		if f.mode == previewStacked {
+			lines = append(lines, padDisplayWidth(th.Overlay+strings.Repeat("─", f.previewW)+"\x1b[0m", f.previewW))
+			lines = append(lines, strings.Split(m.renderPreview(f.previewW, f.previewH), "\n")...)
+		}
 	}
-	return tabs + "\n" + strings.Join(lines, "\n")
+	if f.footerY >= 0 {
+		lines = append(lines, m.renderFooter(m.width))
+	}
+	return strings.Join(lines, "\n")
 }
 
 type pickerListLayout struct {
@@ -303,33 +417,15 @@ type pickerListLayout struct {
 }
 
 func (m pickerModel) listPaneWidth() int {
-	if m.wideEnoughForPreview() && m.width > 1 {
-		width := m.width / 2
-		if width < 1 {
-			return 1
-		}
-		return width
-	}
-	if m.width < 1 {
-		return 1
-	}
-	return m.width
+	return m.frame().listW
 }
 
 func (m pickerModel) bodyHeight() int {
-	h := m.height - pickerTabRows - m.searchPaneHeight()
-	if h < 1 {
-		return 1
-	}
-	return h
+	return max(1, m.frame().listH)
 }
 
 func (m pickerModel) previewBodyHeight() int {
-	h := m.height - pickerTabRows
-	if h < 1 {
-		return 1
-	}
-	return h
+	return max(1, m.frame().previewH)
 }
 
 func (m pickerModel) renderList(width, height int) string {
@@ -337,138 +433,230 @@ func (m pickerModel) renderList(width, height int) string {
 	return strings.Join(layout.Lines, "\n")
 }
 
-// buildPickerListLayout places highest-ranked item blocks nearest the bottom search.
-// Rows inside each block stay top-to-bottom; only block order is reversed.
+func (m pickerModel) emptyListCopy() string {
+	th := m.th()
+	switch {
+	case !m.snapshotReady && m.liveErr != "":
+		return th.Red + pickerCopyLoadFailed + "\x1b[0m"
+	case !m.snapshotReady:
+		return th.Yellow + pickerCopyLoading + "\x1b[0m"
+	case strings.TrimSpace(m.query) != "":
+		return th.Yellow + pickerCopyNoResults + " for “" + m.query + "”\x1b[0m"
+	case m.view == pickerViewAgents:
+		return th.Yellow + pickerCopyNoAgents + "\x1b[0m"
+	default:
+		return th.Yellow + pickerCopyNoSpaces + "\x1b[0m"
+	}
+}
+
+// wrapItemBlock wraps one item's display rows to the content width, highlighting query
+// matches and, for the selected item, emboldening the primary row.
+func (m pickerModel) wrapItemBlock(item PickerItem, selected bool, contentWidth int) []string {
+	rows := highlightItemRows(item, m.query, m.th().Mauve+"\x1b[1m")
+	if len(rows) == 0 {
+		rows = []string{item.ID}
+	}
+	var lines []string
+	for i, row := range rows {
+		if selected && i == 0 {
+			row = emboldenAfterResets(row)
+		}
+		lines = append(lines, wrapDisplayLine(row, contentWidth)...)
+	}
+	return lines
+}
+
+type listWindowResult struct {
+	lines, ids     []string
+	lowest         int // smallest visible item index (nearest the search box)
+	highest        int // largest visible item index (nearest the top)
+	partialLowest  bool
+	partialHighest bool
+}
+
+// fillListWindow wraps only the blocks that can be visible: the anchor block first, then
+// whole/partial blocks toward the bottom (lower rank index), then toward the top.
+func (m pickerModel) fillListWindow(anchor, budget, contentWidth int) listWindowResult {
+	n := len(m.visible)
+	res := listWindowResult{lowest: anchor, highest: anchor}
+	if budget < 1 || n == 0 {
+		return res
+	}
+	block := m.wrapItemBlock(m.visible[anchor], m.visible[anchor].ID == m.selectedID, contentWidth)
+	if len(block) > budget {
+		block = block[:budget]
+	}
+	used := len(block)
+	var below, belowIDs []string
+	for i := anchor - 1; i >= 0 && used < budget; i-- {
+		room := budget - used - 1
+		if room < 1 {
+			break
+		}
+		blk := m.wrapItemBlock(m.visible[i], m.visible[i].ID == m.selectedID, contentWidth)
+		partial := len(blk) > room
+		if partial {
+			blk = blk[:room]
+		}
+		below = append(below, "")
+		belowIDs = append(belowIDs, "")
+		below = append(below, blk...)
+		for range blk {
+			belowIDs = append(belowIDs, m.visible[i].ID)
+		}
+		used += 1 + len(blk)
+		res.lowest = i
+		if partial {
+			res.partialLowest = true
+			break
+		}
+	}
+	var aboveRev, aboveRevIDs [][]string
+	for i := anchor + 1; i < n && used < budget; i++ {
+		room := budget - used - 1
+		if room < 1 {
+			break
+		}
+		blk := m.wrapItemBlock(m.visible[i], m.visible[i].ID == m.selectedID, contentWidth)
+		partial := len(blk) > room
+		if partial {
+			blk = blk[len(blk)-room:]
+		}
+		ids := make([]string, len(blk))
+		for j := range ids {
+			ids[j] = m.visible[i].ID
+		}
+		aboveRev = append(aboveRev, blk)
+		aboveRevIDs = append(aboveRevIDs, ids)
+		used += 1 + len(blk)
+		res.highest = i
+		if partial {
+			res.partialHighest = true
+			break
+		}
+	}
+	for i := len(aboveRev) - 1; i >= 0; i-- {
+		res.lines = append(res.lines, aboveRev[i]...)
+		res.ids = append(res.ids, aboveRevIDs[i]...)
+		res.lines = append(res.lines, "")
+		res.ids = append(res.ids, "")
+	}
+	res.lines = append(res.lines, block...)
+	for range block {
+		res.ids = append(res.ids, m.visible[anchor].ID)
+	}
+	res.lines = append(res.lines, below...)
+	res.ids = append(res.ids, belowIDs...)
+	return res
+}
+
+// buildPickerListLayout places highest-ranked item blocks nearest the bottom search box.
+// Rows inside each block stay top-to-bottom; only block order is reversed. Only rows that
+// can be on screen are wrapped.
 func (m pickerModel) buildPickerListLayout(width, height int) pickerListLayout {
-	if height < 1 {
-		height = 1
+	height = max(1, height)
+	width = max(1, width)
+	th := m.th()
+	n := len(m.visible)
+	if n == 0 {
+		lines := padToHeight(nil, height)
+		ids := make([]string, height)
+		lines[height-1] = padDisplayWidth(strings.Repeat(" ", pickerRailWidth)+m.emptyListCopy(), width) + "\x1b[0m"
+		for i := 0; i < height-1; i++ {
+			lines[i] = padDisplayWidth("", width) + "\x1b[0m"
+		}
+		return pickerListLayout{Lines: lines, ItemIDs: ids}
 	}
-	if width < 1 {
-		width = 1
-	}
-	var blocks [][]string
-	var blockIDs []string
-	if len(m.visible) == 0 {
-		blocks = [][]string{wrapDisplayLine("(no results)", width)}
-		blockIDs = []string{""}
-	}
-	for _, item := range m.visible {
-		block := strings.Join(item.DisplayRows, "\n")
-		if block == "" {
-			block = strings.Join(item.Rows, "\n")
-		}
-		if block == "" {
-			block = item.ID
-		}
-		var lines []string
-		for _, line := range strings.Split(block, "\n") {
-			lines = append(lines, wrapDisplayLine("  "+line, width)...)
-		}
-		blocks = append(blocks, lines)
-		blockIDs = append(blockIDs, item.ID)
-	}
-	var all []string
-	var allIDs []string
-	selectedStart, selectedEnd := 0, 0
-	for i := len(blocks) - 1; i >= 0; i-- {
-		if len(all) > 0 {
-			all = append(all, "")
-			allIDs = append(allIDs, "")
-		}
-		id := ""
-		if i < len(blockIDs) {
-			id = blockIDs[i]
-		}
-		if id != "" && id == m.selectedID {
-			selectedStart = len(all)
-		}
-		for _, line := range blocks[i] {
-			all = append(all, line)
-			allIDs = append(allIDs, id)
-		}
-		if id != "" && id == m.selectedID {
-			selectedEnd = len(all)
+	anchor := 0
+	for i, item := range m.visible {
+		if item.ID == m.selectedID {
+			anchor = i
+			break
 		}
 	}
-	var visible []string
-	var visibleIDs []string
-	if len(all) <= height {
-		pad := height - len(all)
-		for i := 0; i < pad; i++ {
-			visible = append(visible, "")
-			visibleIDs = append(visibleIDs, "")
+	contentWidth := max(1, width-pickerRailWidth)
+	reserve := 0
+	var res listWindowResult
+	var moreAbove, moreBelow int
+	for attempt := 0; attempt < 3; attempt++ {
+		res = m.fillListWindow(anchor, height-reserve, contentWidth)
+		moreAbove = n - 1 - res.highest
+		moreBelow = res.lowest
+		want := 0
+		if moreAbove > 0 || res.partialHighest {
+			want++
 		}
-		visible = append(visible, all...)
-		visibleIDs = append(visibleIDs, allIDs...)
-	} else {
-		start := windowAroundBottomStart(len(all), height, selectedStart, selectedEnd)
-		end := start + height
-		if end > len(all) {
-			end = len(all)
+		if moreBelow > 0 || res.partialLowest {
+			want++
 		}
-		if start > len(all) {
-			start = len(all)
+		if want == reserve || height-want < 1 {
+			break
 		}
-		visible = append([]string{}, all[start:end]...)
-		visibleIDs = append([]string{}, allIDs[start:end]...)
+		reserve = want
 	}
-	for i, line := range visible {
-		if visibleIDs[i] != "" && visibleIDs[i] == m.selectedID {
-			// Restore the row background after token resets without erasing status colors or bold text.
-			base := pickerSelectedBackground + "\x1b[38;5;255m"
-			styled := padDisplayWidth(line, width)
-			// Secondary text needs a lighter gray on the selected gray background.
-			styled = strings.ReplaceAll(styled, pickerMuted, "\x1b[38;5;252m")
-			styled = strings.ReplaceAll(styled, "\x1b[0m", "\x1b[0m"+base)
-			styled = strings.ReplaceAll(styled, "\x1b[m", "\x1b[m"+base)
-			visible[i] = base + styled + "\x1b[0m"
+	var lines, ids []string
+	if reserve > 0 && (moreAbove > 0 || res.partialHighest) {
+		lines = append(lines, th.Overlay+"↑ "+strconv.Itoa(max(moreAbove, 1))+" more\x1b[0m")
+		ids = append(ids, "")
+	}
+	lines = append(lines, res.lines...)
+	ids = append(ids, res.ids...)
+	if reserve > 0 && (moreBelow > 0 || res.partialLowest) {
+		lines = append(lines, th.Overlay+"↓ "+strconv.Itoa(max(moreBelow, 1))+" more\x1b[0m")
+		ids = append(ids, "")
+	}
+	if len(lines) < height {
+		pad := height - len(lines)
+		lines = append(make([]string, pad), lines...)
+		ids = append(make([]string, pad), ids...)
+	}
+	lines = lines[:height]
+	ids = ids[:height]
+	rail := th.Accent + pickerSelectionRail + "\x1b[0m "
+	blank := strings.Repeat(" ", pickerRailWidth)
+	for i, line := range lines {
+		if ids[i] != "" && ids[i] == m.selectedID {
+			lines[i] = padDisplayWidth(rail+line, width) + "\x1b[0m"
 		} else {
-			visible[i] = padDisplayWidth(line, width) + "\x1b[0m"
+			lines[i] = padDisplayWidth(blank+line, width) + "\x1b[0m"
 		}
 	}
-	visible = padToHeight(visible, height)
-	for len(visibleIDs) < height {
-		visibleIDs = append(visibleIDs, "")
-	}
-	if len(visibleIDs) > height {
-		visibleIDs = visibleIDs[:height]
-	}
-	return pickerListLayout{Lines: visible, ItemIDs: visibleIDs}
+	return pickerListLayout{Lines: lines, ItemIDs: ids}
 }
 
 func (m pickerModel) itemIDAtMouse(x, y int) string {
-	searchRows := m.searchPaneHeight()
-	if y < pickerTabRows || y >= m.height-searchRows {
+	f := m.frame()
+	if f.listH < 1 || y < f.listY || y >= f.listY+f.listH {
 		return ""
 	}
-	listHeight := m.height - pickerTabRows - searchRows
-	if listHeight < 1 {
+	if x < 0 || x >= f.listW {
 		return ""
 	}
-	bodyY := y - pickerTabRows
-	listWidth := m.listPaneWidth()
-	if x < 0 || x >= listWidth {
+	layout := m.buildPickerListLayout(f.listW, f.listH)
+	row := y - f.listY
+	if row < 0 || row >= len(layout.ItemIDs) {
 		return ""
 	}
-	layout := m.buildPickerListLayout(listWidth, listHeight)
-	if bodyY < 0 || bodyY >= len(layout.ItemIDs) {
-		return ""
-	}
-	return layout.ItemIDs[bodyY]
+	return layout.ItemIDs[row]
 }
 
 func (m pickerModel) renderPreview(width, height int) string {
-	text := m.previewText
-	if m.previewErr != "" {
-		text = m.previewErr
+	th := m.th()
+	switch {
+	case m.previewLoading:
+		return clipBlock(th.Yellow+pickerCopyLoadingPreview+"\x1b[0m", width, height)
+	case m.previewErr != "":
+		return clipBlock(th.Red+pickerCopyPreviewFailed+"\x1b[0m\n"+th.Muted+m.previewErr+"\x1b[0m", width, height)
+	case m.previewText == "":
+		if !m.snapshotReady {
+			return clipBlock(th.Yellow+pickerCopyLoading+"\x1b[0m", width, height)
+		}
+		return clipBlock(th.Muted+pickerCopyNoPreview+"\x1b[0m", width, height)
+	case m.previewTextLive:
+		return clipLivePreview(m.previewText, width, height)
+	default:
+		return clipBlock(m.previewText, width, height)
 	}
-	if text == "" {
-		text = "(preview)"
-	}
-	if m.previewPane != "" && m.previewErr == "" {
-		return clipLivePreview(text, width, height)
-	}
-	return clipBlock(text, width, height)
 }
 
 // clipLivePreview preserves terminal rows and shows their bottom edge, rather than reflowing a terminal grid.
@@ -485,7 +673,7 @@ func clipLivePreview(text string, width, height int) string {
 		// Replay source styles at each row boundary, including styles set above the crop.
 		carry = continuePickerSGR(carry, line)
 	}
-	return strings.Join(padToHeight(visible, height), "\n")
+	return joinPaddedRows(visible, width, height)
 }
 
 func continuePickerSGR(carry, line string) string {
@@ -497,6 +685,125 @@ func continuePickerSGR(carry, line string) string {
 		}
 	}
 	return carry
+}
+
+// emboldenAfterResets makes a styled row bold without erasing its own colors.
+func emboldenAfterResets(line string) string {
+	line = strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m\x1b[1m")
+	line = strings.ReplaceAll(line, "\x1b[m", "\x1b[m\x1b[1m")
+	return "\x1b[1m" + line
+}
+
+// highlightItemRows returns display rows with query matches highlighted. Fuzzy match
+// offsets map onto plain rows; when a display row's visible text diverges from its
+// plain row, the whole query is highlighted as a case-insensitive substring instead.
+func highlightItemRows(item PickerItem, query, style string) []string {
+	rows := item.DisplayRows
+	if len(rows) == 0 {
+		rows = item.Rows
+	}
+	query = strings.TrimSpace(query)
+	if query == "" || len(rows) == 0 {
+		return rows
+	}
+	out := make([]string, len(rows))
+	perRow := matchedRunesByRow(item, len(rows))
+	for i, row := range rows {
+		set := perRow[i]
+		if set == nil || i >= len(item.Rows) || StripTerminalControls(row) != item.Rows[i] {
+			set = substringRuneMatches(StripTerminalControls(row), query)
+		}
+		if len(set) == 0 {
+			out[i] = row
+			continue
+		}
+		out[i] = highlightVisibleRunes(row, set, style)
+	}
+	return out
+}
+
+// matchedRunesByRow converts SearchText byte offsets into per-row visible rune indexes.
+func matchedRunesByRow(item PickerItem, rowCount int) []map[int]bool {
+	perRow := make([]map[int]bool, rowCount)
+	if len(item.Matches) == 0 || len(item.Rows) == 0 {
+		return perRow
+	}
+	start := 0
+	for r, plain := range item.Rows {
+		if r >= rowCount {
+			break
+		}
+		end := start + len(plain)
+		for _, b := range item.Matches {
+			if b >= start && b < end {
+				if perRow[r] == nil {
+					perRow[r] = map[int]bool{}
+				}
+				perRow[r][utf8.RuneCountInString(plain[:b-start])] = true
+			}
+		}
+		start = end + 1 // joined with a single space
+	}
+	return perRow
+}
+
+func substringRuneMatches(plain, query string) map[int]bool {
+	text := []rune(strings.ToLower(plain))
+	q := []rune(strings.ToLower(query))
+	if len(q) == 0 || len(q) > len(text) {
+		return nil
+	}
+	var set map[int]bool
+	for i := 0; i+len(q) <= len(text); {
+		if string(text[i:i+len(q)]) == string(q) {
+			if set == nil {
+				set = map[int]bool{}
+			}
+			for j := 0; j < len(q); j++ {
+				set[i+j] = true
+			}
+			i += len(q)
+			continue
+		}
+		i++
+	}
+	return set
+}
+
+// highlightVisibleRunes styles the visible runes at the given indexes, keeping existing SGR
+// state by replaying it after each highlighted rune.
+func highlightVisibleRunes(line string, set map[int]bool, style string) string {
+	var b strings.Builder
+	b.Grow(len(line) + 16*len(set))
+	carry := ""
+	index := 0
+	for i := 0; i < len(line); {
+		if line[i] == 0x1b {
+			if loc := pickerSGRPattern.FindStringIndex(line[i:]); loc != nil && loc[0] == 0 {
+				sgr := line[i : i+loc[1]]
+				b.WriteString(sgr)
+				carry = continuePickerSGR(carry, sgr)
+				i += loc[1]
+				continue
+			}
+			b.WriteByte(line[i])
+			i++
+			continue
+		}
+		r, size := utf8.DecodeRuneInString(line[i:])
+		if set[index] {
+			b.WriteString(style)
+			b.WriteString(line[i : i+size])
+			b.WriteString("\x1b[0m")
+			b.WriteString(carry)
+		} else {
+			b.WriteString(line[i : i+size])
+		}
+		_ = r
+		index++
+		i += size
+	}
+	return b.String()
 }
 
 func wrapDisplayLine(line string, width int) []string {
@@ -524,88 +831,6 @@ func padDisplayWidth(line string, width int) string {
 	return lipgloss.NewStyle().Width(width).MaxHeight(1).Render(line)
 }
 
-func windowAroundStart(n, height, selected int) int {
-	if height < 1 || n <= height {
-		return 0
-	}
-	if selected < 0 {
-		selected = 0
-	}
-	if selected >= n {
-		selected = n - 1
-	}
-	start := selected
-	if start+height > n {
-		start = n - height
-	}
-	if start < 0 {
-		start = 0
-	}
-	if selected >= start+height {
-		start = selected - height + 1
-	}
-	if start < 0 {
-		start = 0
-	}
-	return start
-}
-
-// windowAroundBottomStart keeps the selected block visible and prefers highest-ranked rows nearest the bottom.
-func windowAroundBottomStart(n, height, selectedStart, selectedEnd int) int {
-	if height < 1 || n <= height {
-		return 0
-	}
-	if selectedEnd <= selectedStart {
-		start := n - height
-		if start < 0 {
-			return 0
-		}
-		return start
-	}
-	if selectedStart < 0 {
-		selectedStart = 0
-	}
-	if selectedEnd > n {
-		selectedEnd = n
-	}
-	if selectedEnd-selectedStart >= height {
-		start := selectedStart
-		if start+height > n {
-			start = n - height
-		}
-		if start < 0 {
-			start = 0
-		}
-		return start
-	}
-	start := n - height
-	if selectedStart < start {
-		start = selectedStart
-	}
-	if selectedEnd > start+height {
-		start = selectedEnd - height
-	}
-	if start < 0 {
-		start = 0
-	}
-	if start+height > n {
-		start = n - height
-	}
-	if start < 0 {
-		start = 0
-	}
-	return start
-}
-
-func windowAround(lines []string, height, selected int) []string {
-	start := windowAroundStart(len(lines), height, selected)
-	end := start + height
-	if end > len(lines) {
-		end = len(lines)
-	}
-	return lines[start:end]
-}
-
 func padToHeight(lines []string, height int) []string {
 	for len(lines) < height {
 		lines = append(lines, "")
@@ -614,6 +839,19 @@ func padToHeight(lines []string, height int) []string {
 		lines = lines[:height]
 	}
 	return lines
+}
+
+// joinPaddedRows pads every row, including empty filler, so stacked preview
+// lines clear stale cells instead of emitting zero-width blanks.
+func joinPaddedRows(lines []string, width, height int) string {
+	lines = padToHeight(lines, height)
+	for i, line := range lines {
+		if ansi.StringWidth(line) == width {
+			continue
+		}
+		lines[i] = padDisplayWidth(line, width)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func clipBlock(text string, width, height int) string {
@@ -636,5 +874,5 @@ func clipBlock(text string, width, height int) string {
 		}
 		lines[i] = padDisplayWidth(line, width)
 	}
-	return strings.Join(padToHeight(lines, height), "\n")
+	return joinPaddedRows(lines, width, height)
 }

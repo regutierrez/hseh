@@ -12,6 +12,9 @@ import (
 
 var herdrRequestSeq atomic.Uint64
 
+// readContinuityWitness is swapped by tests to observe when the witness is read relative to the request write.
+var readContinuityWitness = ReadContinuityWitnessFromConn
+
 // HerdrSocketPath is the current session socket. HERDR_SOCKET_PATH wins.
 func HerdrSocketPath() string {
 	if path := os.Getenv("HERDR_SOCKET_PATH"); path != "" {
@@ -31,6 +34,9 @@ func CallHerdrMethodContext(ctx context.Context, method string, params any, resu
 	if socketPath == "" {
 		return ServerContinuityWitness{}, fmt.Errorf("hseh herdr socket: HERDR_SOCKET_PATH is not set")
 	}
+	span := traceSpan("socket.call", "method", method)
+	var replyBytes int
+	defer func() { span("bytes", replyBytes) }()
 	var d net.Dialer
 	conn, err := d.DialContext(ctx, "unix", socketPath)
 	if err != nil {
@@ -48,8 +54,10 @@ func CallHerdrMethodContext(ctx context.Context, method string, params any, resu
 		close(done)
 		conn.Close()
 	}()
-	witness, _ := ReadContinuityWitnessFromConn(conn, socketPath)
-
+	// Write the request before anything else touches the connection. Herdr answers
+	// within a millisecond only when the request arrives right after connect; a
+	// short pause (such as the /proc reads below) pushes the reply about 100ms
+	// out to the server's next poll tick.
 	id := fmt.Sprintf("hseh-%d", herdrRequestSeq.Add(1))
 	request := struct {
 		ID     string `json:"id"`
@@ -61,16 +69,25 @@ func CallHerdrMethodContext(ctx context.Context, method string, params any, resu
 	}
 	payload, err := json.Marshal(request)
 	if err != nil {
-		return witness, fmt.Errorf("hseh herdr socket: encode %s: %w", method, err)
+		return ServerContinuityWitness{}, fmt.Errorf("hseh herdr socket: encode %s: %w", method, err)
 	}
 	if _, err := conn.Write(append(payload, '\n')); err != nil {
 		if ctx.Err() != nil {
-			return witness, ctx.Err()
+			return ServerContinuityWitness{}, ctx.Err()
 		}
-		return witness, fmt.Errorf("hseh herdr socket: write %s: %w", method, err)
+		return ServerContinuityWitness{}, fmt.Errorf("hseh herdr socket: write %s: %w", method, err)
 	}
 
+	// Peer credentials are fixed at connect, so the witness reads equally well
+	// while the reply is in flight or after the peer has closed.
+	witnessSpan := traceSpan("socket.witness", "method", method)
+	witness, _ := readContinuityWitness(conn, socketPath)
+	witnessSpan()
+
+	readSpan := traceSpan("socket.reply", "method", method)
 	line, err := bufio.NewReader(conn).ReadBytes('\n')
+	replyBytes = len(line)
+	readSpan("bytes", replyBytes)
 	if err != nil {
 		if ctx.Err() != nil {
 			return witness, ctx.Err()

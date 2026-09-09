@@ -29,6 +29,7 @@ func readWorkspaceGit(ctx context.Context, dir string) WorkspaceGit {
 	if dir == "" {
 		return WorkspaceGit{}
 	}
+	defer traceSpan("git.status", "dir", dir)()
 	cmd := exec.CommandContext(ctx, "git", "--no-optional-locks", "-C", dir, "-c", "core.fsmonitor=false", "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all")
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	output, err := cmd.Output()
@@ -99,6 +100,7 @@ func parseWorkspaceGitStatus(output string) WorkspaceGit {
 
 func loadWorkspaceGit(ctx context.Context, snapshot HerdrSessionSnapshot) map[string]WorkspaceGit {
 	byDirectory := map[string]WorkspaceGit{}
+	span := traceSpan("git.load")
 	for _, workspace := range snapshot.Workspaces {
 		if ctx.Err() != nil {
 			break
@@ -111,5 +113,6 @@ func loadWorkspaceGit(ctx context.Context, snapshot HerdrSessionSnapshot) map[st
 			byDirectory[dir] = readWorkspaceGit(ctx, dir)
 		}
 	}
+	span("dirs", len(byDirectory))
 	return byDirectory
 }

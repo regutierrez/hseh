@@ -34,34 +34,43 @@ func TestWidePreviewMinColumnsConfigOverride(t *testing.T) {
 	}
 }
 
-func TestPreviewHiddenAt99ShownAt100(t *testing.T) {
+func TestPreviewStackedAt99SideBySideAt100(t *testing.T) {
 	m := pickerModel{
 		widePreviewMinCols: DefaultWidePreviewMinColumns,
+		snapshotReady:      true,
 		selectedID:         "w2",
 		visible:            []PickerItem{{ID: "w2", PreviewPane: "w2:p1"}},
 	}
 	next, cmd := m.Update(tea.WindowSizeMsg{Width: 99, Height: 24})
 	got := next.(pickerModel)
 	if got.wideEnoughForPreview() {
-		t.Fatal("99-column popup content must hide preview")
+		t.Fatal("99-column popup content must not split side by side")
 	}
-	if cmd != nil {
-		t.Fatal("99-column width started a preview read")
+	if got.frame().mode != previewStacked {
+		t.Fatalf("99-column popup must stack the preview, mode=%d", got.frame().mode)
 	}
+	if cmd == nil {
+		t.Fatal("stacked preview must start a preview read")
+	}
+	f := got.frame()
+	if f.previewY <= f.searchY || f.previewH < pickerMinStackedPreview || f.listH < pickerMinStackedListRows {
+		t.Fatalf("stacked frame invalid: %+v", f)
+	}
+	got.previewInFlight = false
 	next, cmd = got.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	got = next.(pickerModel)
 	if !got.wideEnoughForPreview() {
-		t.Fatal("100-column popup content must show preview")
+		t.Fatal("100-column popup content must show preview side by side")
 	}
-	if cmd == nil {
-		t.Fatal("100-column width must start a preview read")
+	if cmd != nil {
+		t.Fatal("switching stacked to side must not restart an already running preview chain")
 	}
 }
 
 func TestClickSelectsWrappedMultilineUnicodeRow(t *testing.T) {
 	m := pickerModel{
 		width:              20,
-		height:             12,
+		height:             24,
 		widePreviewMinCols: 100,
 		selectedID:         "a",
 		visible: []PickerItem{
@@ -134,7 +143,7 @@ func TestClickScrolledVisibleRow(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		items = append(items, PickerItem{ID: string(rune('a' + i)), Rows: []string{"row-" + string(rune('a'+i))}})
 	}
-	m := pickerModel{width: 24, height: 8, widePreviewMinCols: 100, selectedID: items[len(items)-1].ID, visible: items}
+	m := pickerModel{width: 24, height: 20, widePreviewMinCols: 100, selectedID: items[len(items)-1].ID, visible: items}
 	layout := m.buildPickerListLayout(m.listPaneWidth(), m.bodyHeight())
 	var firstID string
 	for _, id := range layout.ItemIDs {

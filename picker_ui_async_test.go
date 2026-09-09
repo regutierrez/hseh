@@ -30,7 +30,7 @@ func TestLiveLayoutKeepsSelectionWhenPreviewFills(t *testing.T) {
 	before := m.View()
 	m.previewText = strings.Repeat("BETA_TICK_9\n", 16)
 	after := m.View()
-	if !hasGraySelectedLabel(before, "beta") || !hasGraySelectedLabel(after, "beta") {
+	if !hasRailSelectedLabel(before, "beta") || !hasRailSelectedLabel(after, "beta") {
 		t.Fatalf("lost selection after preview fill before=%q after=%q", before, after)
 	}
 }
@@ -48,7 +48,7 @@ func TestCRLFPreviewDoesNotEraseSelectedRow(t *testing.T) {
 	if strings.ContainsRune(got, '\r') {
 		t.Fatalf("CR in view: %q", got)
 	}
-	if !hasGraySelectedLabel(got, "beta") {
+	if !hasRailSelectedLabel(got, "beta") {
 		t.Fatalf("CRLF preview hid selection: %q", StripTerminalControls(got))
 	}
 }
@@ -60,7 +60,7 @@ func TestPopupSizedViewKeepsBetaSelectionWithPreview(t *testing.T) {
 	}}
 	m.previewText = strings.Repeat("BETA_TICK_1\n", 12)
 	got := m.View()
-	if !hasGraySelectedLabel(got, "beta") {
+	if !hasRailSelectedLabel(got, "beta") {
 		t.Fatalf("popup-sized view lost selection: %q", got)
 	}
 }

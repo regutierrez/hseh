@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -143,21 +144,27 @@ func TestNarrowStopsPreviewReadsAndWideResumes(t *testing.T) {
 	t.Setenv("HERDR_SOCKET_PATH", socket)
 	t.Setenv("HERDR_PLUGIN_STATE_DIR", state)
 	t.Setenv("HERDR_SESSION", "hseh-test")
-	m := pickerModel{widePreviewMinCols: 40, selectedID: "w2", visible: []PickerItem{{ID: "w2", PreviewPane: "w2:p1"}}}
+	m := pickerModel{widePreviewMinCols: 40, previewLoadingDelay: time.Millisecond, snapshotReady: true, selectedID: "w2", visible: []PickerItem{{ID: "w2", PreviewPane: "w2:p1"}}}
 	next, cmd := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	got := next.(pickerModel)
 	if cmd == nil {
 		t.Fatal("expected wide preview read")
 	}
-	next, _ = got.Update(cmd())
-	got = next.(pickerModel)
+	got = feedCmd(got, cmd)
 	if reads.Load() != 1 {
 		t.Fatalf("wide reads %d", reads.Load())
 	}
-	next, cmd = got.Update(tea.WindowSizeMsg{Width: 30, Height: 20})
+	// Too short for a stacked preview: the preview is hidden and reads stop.
+	next, cmd = got.Update(tea.WindowSizeMsg{Width: 30, Height: 6})
 	got = next.(pickerModel)
-	if got.startPreview() != nil {
-		t.Fatal("narrow started a preview read")
+	if got.showsPreview() {
+		t.Fatal("6-row popup still shows a preview")
+	}
+	if cmd != nil || got.startPreview(false) != nil || got.startPreview(true) != nil {
+		t.Fatal("hidden preview started a read")
+	}
+	if got.previewText != "tick" {
+		t.Fatalf("hidden preview dropped the last frame: %q", got.previewText)
 	}
 	if reads.Load() != 1 {
 		t.Fatalf("narrow extra reads %d", reads.Load())
@@ -167,8 +174,7 @@ func TestNarrowStopsPreviewReadsAndWideResumes(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("expected resume preview read")
 	}
-	next, _ = got.Update(cmd())
-	got = next.(pickerModel)
+	got = feedCmd(got, cmd)
 	if reads.Load() != 2 {
 		t.Fatalf("resume reads %d", reads.Load())
 	}

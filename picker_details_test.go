@@ -47,17 +47,27 @@ func TestSelectedRowRetainsStatusColorAndBold(t *testing.T) {
 	}
 }
 
-func TestWrappedDetailsKeepMutedSelectedColor(t *testing.T) {
-	m := pickerModel{selectedID: "a", visible: []PickerItem{{ID: "a", DisplayRows: []string{pickerMuted + strings.Repeat("detail ", 5) + "\x1b[0m"}}}}
+func TestWrappedDetailsKeepMutedColorAndRail(t *testing.T) {
+	m := pickerModel{selectedID: "a", visible: []PickerItem{{ID: "a", DisplayRows: []string{"\x1b[1mName\x1b[0m", pickerMuted + strings.Repeat("detail ", 5) + "\x1b[0m"}}}}
 	layout := m.buildPickerListLayout(12, 6)
 	found := 0
 	for i, id := range layout.ItemIDs {
 		if id != "a" {
 			continue
 		}
+		plain := StripTerminalControls(layout.Lines[i])
+		if !strings.HasPrefix(plain, pickerSelectionRail+" ") {
+			t.Fatalf("selected line lacks rail: %q", layout.Lines[i])
+		}
+		if !strings.Contains(plain, "detail") {
+			continue
+		}
 		found++
-		if !strings.Contains(layout.Lines[i], "\x1b[38;5;252m") {
+		if !strings.Contains(layout.Lines[i], pickerMuted) {
 			t.Fatalf("wrapped detail lost muted style: %q", layout.Lines[i])
+		}
+		if strings.Contains(layout.Lines[i], "\x1b[48;") {
+			t.Fatalf("wrapped detail uses row background: %q", layout.Lines[i])
 		}
 	}
 	if found < 2 {

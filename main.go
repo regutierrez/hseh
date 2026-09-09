@@ -7,6 +7,7 @@ import (
 )
 
 func main() {
+	traceEvent("process.start", "args", strings.Join(os.Args[1:], " "), "since_exec_ms", traceProcessAge().Milliseconds())
 	if err := runHseh(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)

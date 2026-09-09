@@ -13,7 +13,7 @@ func TestOraclePreviewDoesNotEraseSelection(t *testing.T) {
 	before := m.View()
 	m.previewText = strings.Repeat("BETA_TICK_1\n", 15)
 	after := m.View()
-	if !hasGraySelectedLabel(before, "beta") || !hasGraySelectedLabel(after, "beta") {
+	if !hasRailSelectedLabel(before, "beta") || !hasRailSelectedLabel(after, "beta") {
 		t.Fatalf("selection before=%q after=%q", before, after)
 	}
 }
