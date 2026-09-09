@@ -5,10 +5,13 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/regutierrez/hseh/internal/picker"
+	"github.com/regutierrez/hseh/internal/trace"
 )
 
 func main() {
-	traceEvent("process.start", "args", strings.Join(os.Args[1:], " "), "since_exec_ms", traceProcessAge().Milliseconds(), "unix_ms", time.Now().UnixMilli())
+	trace.Event("process.start", "args", strings.Join(os.Args[1:], " "), "since_exec_ms", trace.ProcessAge().Milliseconds(), "unix_ms", time.Now().UnixMilli())
 	if err := runHseh(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
@@ -17,23 +20,23 @@ func main() {
 
 func runHseh(args []string) error {
 	if len(args) == 0 {
-		return runPicker(pickerViewSpaces)
+		return picker.Run(picker.ViewSpaces)
 	}
 	switch args[0] {
 	case "popup":
-		view := pickerViewSpaces
+		view := picker.ViewSpaces
 		if len(args) > 1 {
 			view = args[1]
 		}
-		return runPicker(view)
+		return picker.Run(view)
 	case "launch":
-		view := pickerViewSpaces
+		view := picker.ViewSpaces
 		if len(args) > 1 {
 			view = args[1]
 		}
 		return runLaunch(view)
 	case "list":
-		view := pickerViewSpaces
+		view := picker.ViewSpaces
 		jsonOut := false
 		for i := 1; i < len(args); i++ {
 			switch args[i] {

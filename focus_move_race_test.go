@@ -1,37 +1,44 @@
 package main
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/regutierrez/hseh/internal/focus"
+	"github.com/regutierrez/hseh/internal/herdr"
+	"github.com/regutierrez/hseh/internal/hsehtest"
+	"github.com/regutierrez/hseh/internal/picker"
+)
 
 func TestVerifiedMoveAfterSnapshotKeepsPublicMRU(t *testing.T) {
-	snapshot := HerdrSessionSnapshot{
+	snapshot := herdr.SessionSnapshot{
 		Version: "0.9.0",
-		Agents: []HerdrAgentRow{
-			{HerdrPaneRow: HerdrPaneRow{PaneID: "w2:p9", Agent: "pi", AgentSession: &HerdrAgentSession{Value: "a"}, AgentStatus: "idle"}},
+		Agents: []herdr.AgentRow{
+			{PaneRow: herdr.PaneRow{PaneID: "w2:p9", Agent: "pi", AgentSession: &herdr.AgentSession{Value: "a"}, AgentStatus: "idle"}},
 		},
 	}
-	socket, stateDir := startFakeHerdr(t, snapshot)
+	socket, stateDir := hsehtest.Start(t, &hsehtest.Server{Snapshot: snapshot})
 	t.Setenv("HERDR_SOCKET_PATH", socket)
 	t.Setenv("HERDR_PLUGIN_STATE_DIR", stateDir)
 	t.Setenv("HERDR_SESSION", "hseh-test")
-	witness, err := ReadServerContinuityWitness()
+	witness, err := herdr.ReadContinuityWitness()
 	if err != nil {
 		t.Fatal(err)
 	}
-	history := emptyFocusHistory(witness)
-	history = ApplyVerifiedOccupantTransition(history, "w1:p1", "pi", "a", false)
-	history = RecordAgentPaneFocus(history, "w1:p1")
-	old, _ := currentAgentLiveID(history, "w1:p1")
-	history = pruneFocusHistory(history, snapshot)
-	if err := writeFocusHistoryFile(stateDir, history); err != nil {
+	history := focus.EmptyHistory(witness)
+	history = focus.ApplyVerifiedOccupantTransition(history, "w1:p1", "pi", "a", false)
+	history = focus.RecordAgentPaneFocus(history, "w1:p1")
+	old, _ := focus.CurrentAgentLiveID(history, "w1:p1")
+	history = focus.Prune(history, snapshot)
+	if err := focus.WriteFile(stateDir, history); err != nil {
 		t.Fatal(err)
 	}
-	if err := applyPluginEvent("pane.moved", pluginEventData{
+	if err := focus.ApplyPluginEvent("pane.moved", herdr.PluginEventData{
 		PreviousPaneID: "w1:p1",
-		Pane:           &pluginEventPane{PaneID: "w2:p9"},
+		Pane:           &herdr.PluginEventPane{PaneID: "w2:p9"},
 	}); err != nil {
 		t.Fatal(err)
 	}
-	got, err := loadFocusHistoryFile(stateDir)
+	got, err := focus.LoadFile(stateDir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,12 +54,12 @@ func TestVerifiedMoveAfterSnapshotKeepsPublicMRU(t *testing.T) {
 	if !found {
 		t.Fatalf("verified move lost prior MRU: %+v", got.Agents)
 	}
-	want := pickerSelectionID(pickerKindAgent, AgentLiveID{PaneID: "w2:p9", Generation: old.Generation}.String())
-	items := BuildPickerItems("agents", snapshot, got, nil, [][]string{{"agent"}})
-	if !pickerItemByID(items, want) {
+	want := picker.SelectionID(picker.KindAgent, focus.AgentLiveID{PaneID: "w2:p9", Generation: old.Generation}.String())
+	items := picker.BuildItems("agents", snapshot, got, nil, [][]string{{"agent"}})
+	if !picker.HasItemID(items, want) {
 		t.Fatalf("live list missing rekeyed id %s items=%+v", want, items)
 	}
-	sel := PreselectPickerItemID("agents", items, got, pickerLaunchContext{CurrentAgent: "other"})
+	sel := picker.PreselectItemID("agents", items, got, picker.LaunchContext{CurrentAgent: "other"})
 	if sel != want {
 		t.Fatalf("preselect %q want %s", sel, want)
 	}

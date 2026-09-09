@@ -28,6 +28,28 @@ then `herdr plugin action invoke hseh.spaces`
 
 tab changes view. enter switches. esc cancels.
 
+## layout
+
+single binary, so `main.go` stays at the module root (that is what
+`herdr-plugin.toml` builds) and everything else lives under `internal/` so
+nothing outside this module can import it:
+
+| package | what it owns |
+| --- | --- |
+| `internal/config` | plugin paths (state, config, spaces dirs), `hseh.toml`, env-derived ids |
+| `internal/lockfile` | flock helper shared by history, definitions and space open |
+| `internal/trace` | `HSEH_TRACE` timing hooks |
+| `internal/termtext` | strip terminal controls, keep only SGR |
+| `internal/gitinfo` | `git status --porcelain=v2` summary per directory |
+| `internal/herdr` | socket client, `session.snapshot` types, continuity witness, plugin events, workspace/tab/pane calls |
+| `internal/focus` | mru focus history on disk and the plugin event hook that maintains it |
+| `internal/space` | reusable space definitions, associations, open and recover |
+| `internal/picker` | bubble tea ui: items, rendering, theme, sidebar, definition rows |
+| `internal/hsehtest` | fake herdr socket server and fixtures for tests |
+
+`commands.go` next to `main.go` holds the thin cli command bodies; the
+`*_cli_test.go` files there drive the compiled binary end to end.
+
 ## measuring speed
 
 set `HSEH_TRACE` to a file path and hseh appends one line per timed event
@@ -67,7 +89,7 @@ the first read finds nothing, sleeps `CONNECTION_POLL_INTERVAL` (100ms) before
 looking again (`src/api/server.rs`, `read_request_line`). whether a call takes
 0.5ms or 100ms is a race between the client's write and the server's first
 read, and processes herdr itself spawns almost always lose it. hseh copes two
-ways in `herdr_socket.go`:
+ways in `internal/herdr/socket.go`:
 
 - the request is written before anything else touches the connection
   (the continuity witness is read while the reply is in flight).
