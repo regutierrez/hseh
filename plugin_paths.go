@@ -141,8 +141,9 @@ func sessionHistoryDir(stateDir string) string {
 }
 
 type hsehFileConfig struct {
-	PreviewPollMs         int `toml:"preview_poll_ms"`
-	WidePreviewMinColumns int `toml:"wide_preview_min_columns"`
+	PreviewPollMs         int    `toml:"preview_poll_ms"`
+	WidePreviewMinColumns int    `toml:"wide_preview_min_columns"`
+	TraceFile             string `toml:"trace_file"`
 }
 
 func loadHsehFileConfig() (hsehFileConfig, []string) {

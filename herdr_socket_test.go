@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"net"
 	"path/filepath"
+	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -85,5 +87,65 @@ func TestCallHerdrMethodWitnessSurvivesPeerClose(t *testing.T) {
 	}
 	if witness.PeerPID == 0 || witness.SocketPath != socketPath {
 		t.Fatalf("witness not read from a closing peer: %+v", witness)
+	}
+}
+
+// A first connection that Herdr leaves waiting on its slow tick must not delay
+// read-only calls: a second connection resends the request and its reply wins.
+func TestCallHerdrMethodHedgesSlowIdempotentReply(t *testing.T) {
+	socketPath := filepath.Join(t.TempDir(), "herdr.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { listener.Close() })
+	var connCount int32
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			n := atomic.AddInt32(&connCount, 1)
+			go func(c net.Conn, n int32) {
+				defer c.Close()
+				if _, err := bufio.NewReader(c).ReadBytes('\n'); err != nil {
+					return
+				}
+				if n == 1 {
+					time.Sleep(300 * time.Millisecond) // the slow tick
+				}
+				_, _ = c.Write([]byte(`{"id":"x","result":{"conn":` + strconv.Itoa(int(n)) + `}}` + "\n"))
+			}(conn, n)
+		}
+	}()
+	t.Setenv("HERDR_SOCKET_PATH", socketPath)
+	var result map[string]any
+	start := time.Now()
+	if _, err := CallHerdrMethodContext(withHerdrHedge(context.Background()), "session.snapshot", map[string]any{}, &result); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed > 150*time.Millisecond {
+		t.Fatalf("hedge did not rescue the slow reply: %v", elapsed)
+	}
+	if result["conn"] != float64(2) {
+		t.Fatalf("expected the hedged connection to win, got %v", result)
+	}
+	// Non-idempotent methods must never be resent, even when hedging is allowed.
+	atomic.StoreInt32(&connCount, 0)
+	var raw json.RawMessage
+	if _, err := CallHerdrMethodContext(withHerdrHedge(context.Background()), "workspace.focus", map[string]any{"workspace_id": "w1"}, &raw); err != nil {
+		t.Fatal(err)
+	}
+	if got := atomic.LoadInt32(&connCount); got != 1 {
+		t.Fatalf("workspace.focus opened %d connections, want 1", got)
+	}
+	// Background polls (no hedge marker) wait for the slow reply rather than duplicating work.
+	atomic.StoreInt32(&connCount, 0)
+	if _, err := CallHerdrMethodContext(context.Background(), "session.snapshot", map[string]any{}, &result); err != nil {
+		t.Fatal(err)
+	}
+	if got := atomic.LoadInt32(&connCount); got != 1 {
+		t.Fatalf("unmarked session.snapshot opened %d connections, want 1", got)
 	}
 }

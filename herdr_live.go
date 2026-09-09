@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // HerdrAgentSession is a native conversation reference, not a live occupant id.
@@ -201,7 +202,7 @@ type herdrPluginPaneOpenEnvelope struct {
 func OpenHsehPluginPopup(view string) error {
 	pluginID := osGetenvPluginID()
 	var envelope herdrPluginPaneOpenEnvelope
-	_, err := CallHerdrMethod("plugin.pane.open", map[string]any{
+	_, err := CallHerdrMethodContext(withHerdrHedge(context.Background()), "plugin.pane.open", map[string]any{
 		"plugin_id":  pluginID,
 		"entrypoint": view,
 		"placement":  "popup",
@@ -210,6 +211,11 @@ func OpenHsehPluginPopup(view string) error {
 		"focus":      true,
 	}, &envelope)
 	if err != nil {
+		// The hedged duplicate of this request, or a repeated keypress, finds the
+		// popup already open. Either way the popup the user asked for is on screen.
+		if strings.Contains(err.Error(), "ui_busy") {
+			return nil
+		}
 		return err
 	}
 	if envelope.Type != "ok" && envelope.Type != "plugin_pane_opened" {

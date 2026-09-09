@@ -9,8 +9,8 @@ import (
 	"time"
 )
 
-// HSEH_TRACE names an append-only file that receives one line per timed event.
-// Unset (the default) makes every hook a nil check. Lines look like:
+// HSEH_TRACE (or trace_file in hseh.toml) names an append-only file that
+// receives one line per timed event. Unset (the default) makes every hook a nil check. Lines look like:
 //
 //	+123.456ms socket.call dur=0.482ms method=session.snapshot bytes=16645
 //
@@ -61,6 +61,12 @@ func traceProcessAge() time.Duration {
 func traceEnabled() bool {
 	traceInit.Do(func() {
 		path := os.Getenv("HSEH_TRACE")
+		if path == "" {
+			// Herdr spawns plugin processes with its own environment, so the
+			// plugin config file is the way to trace popups and actions.
+			cfg, _ := loadHsehFileConfig()
+			path = cfg.TraceFile
+		}
 		if path == "" {
 			return
 		}

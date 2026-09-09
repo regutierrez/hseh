@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 )
 
 func main() {
-	traceEvent("process.start", "args", strings.Join(os.Args[1:], " "), "since_exec_ms", traceProcessAge().Milliseconds())
+	traceEvent("process.start", "args", strings.Join(os.Args[1:], " "), "since_exec_ms", traceProcessAge().Milliseconds(), "unix_ms", time.Now().UnixMilli())
 	if err := runHseh(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)

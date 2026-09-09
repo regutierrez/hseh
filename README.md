@@ -47,13 +47,40 @@ grep socket.call /tmp/hseh.trace | sort -t= -k2 -n | tail   # slowest herdr roun
 grep git.status /tmp/hseh.trace | sort -t= -k2 -n | tail    # slowest repos
 ```
 
-`process.start` carries `since_exec_ms`: time spent before `main`, which is
-bubble tea's package init querying the terminal background color. a terminal
-that never answers stalls there for 5s.
+herdr spawns plugin processes with its own environment, so `HSEH_TRACE` does
+not reach popups. put the path in the plugin config instead:
 
-herdr answers within a millisecond only when the request arrives immediately
-after connect, so the socket client writes the request before reading the
-continuity witness. do not put work between dial and write.
+```toml
+# ~/.config/herdr/plugins/config/hseh/hseh.toml
+trace_file = "/tmp/hseh.trace"
+```
+
+`process.start` carries `since_exec_ms` (time spent before `main`, which is
+bubble tea's package init querying the terminal background color; a terminal
+that never answers stalls there for 5s) and `unix_ms`, so the `launch` and
+`popup` processes of one keypress can be lined up.
+
+### the 100ms herdr cliff
+
+herdr's api server reads a request byte by byte in non-blocking mode and, when
+the first read finds nothing, sleeps `CONNECTION_POLL_INTERVAL` (100ms) before
+looking again (`src/api/server.rs`, `read_request_line`). whether a call takes
+0.5ms or 100ms is a race between the client's write and the server's first
+read, and processes herdr itself spawns almost always lose it. hseh copes two
+ways in `herdr_socket.go`:
+
+- the request is written before anything else touches the connection
+  (the continuity witness is read while the reply is in flight).
+- the calls a person is waiting on are hedged: the first `session.snapshot`,
+  a selection-change `pane.read`, and `launch`'s `plugin.pane.open`. if no reply
+  lands within 2ms the same request goes out on a second connection and the
+  first reply wins. `plugin.pane.open` is safe to duplicate because herdr refuses
+  a second popup with `ui_busy`, which `launch` treats as success. background
+  polls are not hedged (a late refresh is invisible and the duplicate would only
+  cost herdr work), and mutating calls (`workspace.focus`, `agent.focus`, ...)
+  are never resent.
+
+with both, keypress to list measures about 12 to 18ms instead of about 210ms.
 
 benchmarks for the cpu side (filtering, layout, view, key handling):
 

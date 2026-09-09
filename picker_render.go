@@ -358,8 +358,10 @@ func (m pickerModel) View() string {
 }
 
 func (m pickerModel) renderView() (out string) {
-	span := traceSpan("view")
-	defer func() { span("bytes", len(out)) }()
+	if traceEnabled() {
+		span := traceSpan("view")
+		defer func() { span("bytes", len(out)) }()
+	}
 	f := m.frame()
 	tabs := m.renderTabs()
 	if m.height > 0 && m.height <= pickerTabRows {

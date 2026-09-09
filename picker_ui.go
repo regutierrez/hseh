@@ -305,6 +305,9 @@ func (m pickerModel) selectedItem() (PickerItem, bool) {
 }
 
 func (m pickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if !traceEnabled() {
+		return m, updatePicker(&m, msg)
+	}
 	span := traceSpan("update", "msg", fmt.Sprintf("%T", msg))
 	cmd := updatePicker(&m, msg)
 	span()
@@ -596,6 +599,10 @@ func (m *pickerModel) startSnapshot() tea.Cmd {
 	m.snapshotSeq++
 	seq := m.snapshotSeq
 	ctx := m.io().replace(&m.io().snapshot)
+	if !m.snapshotReady {
+		// The first snapshot is what the user waits for; later polls are not.
+		ctx = withHerdrHedge(ctx)
+	}
 	return func() tea.Msg {
 		defer traceSpan("snapshot.load")()
 		snapshot, witness, err := LoadHerdrSessionSnapshotContext(ctx)
@@ -690,6 +697,9 @@ func (m *pickerModel) startPreview(refresh bool) tea.Cmd {
 		m.previewLoading = false
 	}
 	ctx := m.io().replace(&m.io().preview)
+	if !refresh {
+		ctx = withHerdrHedge(ctx)
+	}
 	read := m.paneReader()
 	readCmd := func() tea.Msg {
 		text, err := read(ctx, paneID)
