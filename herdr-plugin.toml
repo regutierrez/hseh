@@ -3,7 +3,14 @@ name = "hseh"
 version = "0.1.0"
 min_herdr_version = "0.9.0"
 description = "Space and live agent switcher"
-platforms = ["linux"]
+platforms = ["linux", "macos"]
+
+# herdr plugin install clones this repo and runs this before registering the
+# plugin. plugin link does not run it; local checkouts still need go build.
+# Same argv on linux and macos: go writes an extensionless binary named hseh.
+[[build]]
+platforms = ["linux", "macos"]
+command = ["go", "build", "-o", "hseh", "."]
 
 [[actions]]
 id = "spaces"
