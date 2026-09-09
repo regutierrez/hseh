@@ -1,6 +1,6 @@
 # hseh
 
-i slopped this one up entirely. you have been warned.
+> i slopped this one up entirely. you have been warned.
 
 i miss [sesh](https://github.com/joshmedeski/sesh) so i made a shittier one for herdr.
 
