@@ -1,0 +1,68 @@
+id = "hseh"
+name = "hseh"
+version = "0.1.0"
+min_herdr_version = "0.9.0"
+description = "Space and live agent switcher"
+platforms = ["linux"]
+
+[[actions]]
+id = "spaces"
+title = "hseh: spaces"
+contexts = ["workspace"]
+command = ["./hseh", "launch", "spaces"]
+
+[[actions]]
+id = "agents"
+title = "hseh: agents"
+contexts = ["workspace"]
+command = ["./hseh", "launch", "agents"]
+
+[[actions]]
+id = "switch"
+title = "hseh: previous space"
+contexts = ["workspace"]
+command = ["./hseh", "switch"]
+
+[[panes]]
+id = "spaces"
+title = "hseh"
+placement = "popup"
+width = "85%"
+height = "80%"
+command = ["./hseh", "popup", "spaces"]
+
+[[panes]]
+id = "agents"
+title = "hseh"
+placement = "popup"
+width = "85%"
+height = "80%"
+command = ["./hseh", "popup", "agents"]
+
+[[events]]
+on = "workspace.focused"
+command = ["./hseh", "event"]
+
+[[events]]
+on = "workspace.closed"
+command = ["./hseh", "event"]
+
+[[events]]
+on = "pane.focused"
+command = ["./hseh", "event"]
+
+[[events]]
+on = "pane.closed"
+command = ["./hseh", "event"]
+
+[[events]]
+on = "pane.moved"
+command = ["./hseh", "event"]
+
+[[events]]
+on = "pane.exited"
+command = ["./hseh", "event"]
+
+[[events]]
+on = "pane.agent_detected"
+command = ["./hseh", "event"]
