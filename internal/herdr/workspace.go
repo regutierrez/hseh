@@ -38,7 +38,7 @@ type paneSplitEnvelope struct {
 
 func CreateWorkspace(ctx context.Context, cwd, label string, focus bool) (workspaceID, tabID, paneID string, err error) {
 	var out workspaceCreatedEnvelope
-	_, err = CallContext(ctx, "workspace.create", map[string]any{
+	_, err = callContext(ctx, "workspace.create", map[string]any{
 		"cwd":   cwd,
 		"label": label,
 		"focus": focus,
@@ -62,7 +62,7 @@ func CreateTab(ctx context.Context, workspaceID, label, cwd string, focus bool) 
 		params["cwd"] = cwd
 	}
 	var out tabCreatedEnvelope
-	_, err = CallContext(ctx, "tab.create", params, &out)
+	_, err = callContext(ctx, "tab.create", params, &out)
 	if err != nil {
 		return "", "", err
 	}
@@ -73,12 +73,12 @@ func CreateTab(ctx context.Context, workspaceID, label, cwd string, focus bool) 
 }
 
 func RenameTab(ctx context.Context, tabID, label string) error {
-	_, err := CallContext(ctx, "tab.rename", map[string]any{"tab_id": tabID, "label": label}, nil)
+	_, err := callContext(ctx, "tab.rename", map[string]any{"tab_id": tabID, "label": label}, nil)
 	return err
 }
 
 func CloseTab(ctx context.Context, tabID string) error {
-	_, err := CallContext(ctx, "tab.close", map[string]any{"tab_id": tabID}, nil)
+	_, err := callContext(ctx, "tab.close", map[string]any{"tab_id": tabID}, nil)
 	return err
 }
 
@@ -95,7 +95,7 @@ func SplitPane(ctx context.Context, targetPaneID, direction string, ratio float6
 		params["cwd"] = cwd
 	}
 	var out paneSplitEnvelope
-	_, err := CallContext(ctx, "pane.split", params, &out)
+	_, err := callContext(ctx, "pane.split", params, &out)
 	if err != nil {
 		return "", err
 	}
@@ -106,12 +106,12 @@ func SplitPane(ctx context.Context, targetPaneID, direction string, ratio float6
 }
 
 func RenamePane(ctx context.Context, paneID, label string) error {
-	_, err := CallContext(ctx, "pane.rename", map[string]any{"pane_id": paneID, "label": label}, nil)
+	_, err := callContext(ctx, "pane.rename", map[string]any{"pane_id": paneID, "label": label}, nil)
 	return err
 }
 
 func SubmitPaneCommand(ctx context.Context, paneID, command string) error {
-	_, err := CallContext(ctx, "pane.send_input", map[string]any{
+	_, err := callContext(ctx, "pane.send_input", map[string]any{
 		"pane_id": paneID,
 		"text":    command,
 		"keys":    []string{"Enter"},

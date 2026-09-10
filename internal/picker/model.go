@@ -27,8 +27,8 @@ const snapshotPollInterval = time.Second
 // gitPollInterval is the workspace git branch/status refresh interval.
 const gitPollInterval = 3 * time.Second
 
-// DefaultPreviewLoadingDelay is how long a new preview may take before "Loading preview…" replaces the last frame.
-const DefaultPreviewLoadingDelay = 500 * time.Millisecond
+// defaultPreviewLoadingDelay is how long a new preview may take before "Loading preview…" replaces the last frame.
+const defaultPreviewLoadingDelay = 500 * time.Millisecond
 
 type bootMsg struct{}
 
@@ -61,7 +61,7 @@ type snapshotLoadedMsg struct {
 
 // catalogLoadedMsg carries the sidebar layout and reusable-space definitions loaded after first paint.
 type catalogLoadedMsg struct {
-	layout      SidebarLayout
+	layout      sidebarLayout
 	definitions []space.Definition
 	errs        []string
 }
@@ -126,7 +126,7 @@ type model struct {
 	selectedID         string
 	snapshot           herdr.SessionSnapshot
 	history            focus.History
-	layout             SidebarLayout
+	layout             sidebarLayout
 	definitions        []space.Definition
 	associationRecords []space.AssociationRecord
 	unresolvedRecords  []space.AssociationRecord
@@ -169,7 +169,7 @@ type model struct {
 	dividerDrag        bool
 	mouseOut           io.Writer
 
-	launch        LaunchContext
+	launch        launchContext
 	pendingAccept bool
 	quitting      bool
 	cancels       *cancelSet
@@ -210,7 +210,7 @@ func (m *model) rebuildVisible() {
 	items := m.catalogItems()
 	m.allItems = items
 	m.visible, m.searchScratch = filterItemsInto(m.visible[:0], m.searchScratch, items, m.query)
-	m.selectedID = PreselectItemID(m.view, m.visible, m.history, m.launch)
+	m.selectedID = preselectItemID(m.view, m.visible, m.history, m.launch)
 	// previewPane and previewDir stay unset here so the first afterSelectionChange
 	// treats the preselected item as a selection change: a hedged read with the
 	// loading indicator, not an unhedged refresh that can sit on Herdr's 100ms tick.
@@ -224,7 +224,7 @@ func (m *model) catalogItems() []Item {
 // previewTarget names what the item previews: a live agent pane, or the directory of a space/template.
 func previewTarget(item Item) (paneID, dir string) {
 	if item.Kind == KindAgent {
-		return item.PreviewPane, ""
+		return item.PaneID, ""
 	}
 	return "", item.Path
 }
@@ -671,7 +671,7 @@ func (m *model) startPreview(refresh bool) tea.Cmd {
 func (m *model) previewLoadingCmd(ctx context.Context, seq uint64) tea.Cmd {
 	delay := m.previewLoadingDelay
 	if delay <= 0 {
-		delay = DefaultPreviewLoadingDelay
+		delay = defaultPreviewLoadingDelay
 	}
 	return func() tea.Msg {
 		timer := time.NewTimer(delay)
@@ -698,7 +698,10 @@ func (m *model) startDirectoryPreview(item Item, dir string) tea.Cmd {
 	m.previewErr = ""
 	m.previewLoading = false
 	ctx := m.io().replace(&m.io().preview)
-	read := m.dirReader()
+	read := m.readDir
+	if read == nil {
+		read = dirlist.Read
+	}
 	readCmd := func() tea.Msg {
 		text, err := read(ctx, dir)
 		if err != nil {
@@ -710,13 +713,6 @@ func (m *model) startDirectoryPreview(item Item, dir string) tea.Cmd {
 		return previewLoadedMsg{seq: seq, targetID: targetID, dir: dir, text: text}
 	}
 	return tea.Batch(readCmd, m.previewLoadingCmd(ctx, seq))
-}
-
-func (m *model) dirReader() func(ctx context.Context, dir string) (string, error) {
-	if m.readDir != nil {
-		return m.readDir
-	}
-	return dirlist.Read
 }
 
 func (m *model) startAccept() tea.Cmd {
@@ -764,7 +760,7 @@ func (m *model) startAccept() tea.Cmd {
 		}
 		if kind == KindAgent {
 			live, ok := focus.CurrentAgentLiveID(history, paneID)
-			if !ok || SelectionID(KindAgent, live.String()) != selectedID {
+			if !ok || selectionID(KindAgent, live.String()) != selectedID {
 				return errorMsg{err: fmt.Errorf("hseh focus: selected occupant was replaced")}
 			}
 			err = herdr.FocusAgentContext(ctx, paneID)
@@ -803,59 +799,48 @@ func (m *model) afterSelectionChange() tea.Cmd {
 
 func (m *model) applyQuery() {
 	m.visible, m.searchScratch = filterItemsInto(m.visible[:0], m.searchScratch, m.allItems, m.query)
-	if !HasItemID(m.visible, m.selectedID) {
+	if !hasItemID(m.visible, m.selectedID) {
 		m.selectedID = ""
 		if m.query == "" {
-			m.selectedID = PreselectItemID(m.view, m.visible, m.history, m.launch)
+			m.selectedID = preselectItemID(m.view, m.visible, m.history, m.launch)
 		}
 	}
+}
+
+// mergePreservingOrder keeps prev's order for rows still in next, then appends next's new rows.
+func mergePreservingOrder(prev, next []Item) []Item {
+	byID := make(map[string]Item, len(next))
+	for _, item := range next {
+		byID[item.ID] = item
+	}
+	merged := make([]Item, 0, len(next))
+	seen := make(map[string]bool, len(next))
+	for _, item := range prev {
+		if fresh, ok := byID[item.ID]; ok {
+			merged = append(merged, fresh)
+			seen[item.ID] = true
+		}
+	}
+	for _, item := range next {
+		if !seen[item.ID] {
+			merged = append(merged, item)
+		}
+	}
+	return merged
 }
 
 // refreshMembership merges fresh catalog rows without reordering rows that merely changed status.
 func (m *model) refreshMembership() tea.Cmd {
 	fresh := m.catalogItems()
-	byID := make(map[string]Item, len(fresh))
-	for _, item := range fresh {
-		byID[item.ID] = item
-	}
 	if m.query == "" {
-		kept := make([]Item, 0, len(fresh))
-		seen := make(map[string]bool, len(fresh))
-		for _, item := range m.allItems {
-			if next, ok := byID[item.ID]; ok {
-				kept = append(kept, next)
-				seen[item.ID] = true
-			}
-		}
-		for _, item := range fresh {
-			if !seen[item.ID] {
-				kept = append(kept, item)
-			}
-		}
+		kept := mergePreservingOrder(m.allItems, fresh)
 		m.allItems = kept
 		m.visible = append(m.visible[:0], kept...)
 	} else {
 		var matched []Item
 		matched, m.searchScratch = filterItemsInto(nil, m.searchScratch, fresh, m.query)
-		matchedByID := make(map[string]Item, len(matched))
-		for _, item := range matched {
-			matchedByID[item.ID] = item
-		}
-		visible := make([]Item, 0, len(matched))
-		seen := make(map[string]bool, len(matched))
-		for _, item := range m.visible {
-			if next, ok := matchedByID[item.ID]; ok {
-				visible = append(visible, next)
-				seen[item.ID] = true
-			}
-		}
-		for _, item := range matched {
-			if !seen[item.ID] {
-				visible = append(visible, item)
-			}
-		}
 		m.allItems = fresh
-		m.visible = visible
+		m.visible = mergePreservingOrder(m.visible, matched)
 	}
 	item, ok := m.selectedItem()
 	if !ok {
@@ -924,7 +909,7 @@ func Run(view string) error {
 		return err
 	}
 	settings, configErrs := config.Load()
-	theme, themeErrs := loadTheme("")
+	theme, themeErrs := loadTheme()
 	configErrs = append(configErrs, themeErrs...)
 	m := newAsyncModel(view, theme, settings.PreviewPoll, settings.WidePreviewMinColumns, configErrs)
 	m.mouseOut = os.Stdout

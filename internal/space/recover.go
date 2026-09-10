@@ -20,24 +20,12 @@ func Recover(ctx context.Context, definitionID, workspaceID string, create bool)
 	if create == (workspaceID != "") {
 		return OpenResult{}, fmt.Errorf("hseh recover: %s", RecoverUsage)
 	}
-	var result OpenResult
-	err := withOpenLock(ctx, func() error {
-		var innerErr error
-		result, innerErr = recoverLocked(ctx, definitionID, workspaceID, create)
-		return innerErr
-	})
-	return result, err
+	return withOpenLock(ctx, func() (OpenResult, error) { return recoverLocked(ctx, definitionID, workspaceID, create) })
 }
 
 func recoverLocked(ctx context.Context, definitionID, workspaceID string, create bool) (OpenResult, error) {
-	if err := ctx.Err(); err != nil {
-		return OpenResult{}, err
-	}
 	def, err := loadDefinition("recover", definitionID)
 	if err != nil {
-		return OpenResult{}, err
-	}
-	if err := ctx.Err(); err != nil {
 		return OpenResult{}, err
 	}
 	snapshot, witness, err := herdr.LoadSessionSnapshotContext(ctx)
@@ -49,9 +37,6 @@ func recoverLocked(ctx context.Context, definitionID, workspaceID string, create
 	if err != nil {
 		return OpenResult{}, err
 	}
-	if err := ctx.Err(); err != nil {
-		return OpenResult{}, err
-	}
 	if liveID, exact := exactLiveAssociation(state, snapshot, def.identity()); exact {
 		if !create && workspaceID != liveID {
 			return OpenResult{}, fmt.Errorf("hseh recover: definition %s is already associated with %s", def.ID, liveID)
@@ -59,7 +44,7 @@ func recoverLocked(ctx context.Context, definitionID, workspaceID string, create
 		if err := herdr.FocusWorkspaceContext(ctx, liveID); err != nil {
 			return OpenResult{}, err
 		}
-		return OpenResult{Action: ActionFocus, WorkspaceID: liveID, DefinitionID: def.ID}, nil
+		return OpenResult{Action: actionFocus, WorkspaceID: liveID, DefinitionID: def.ID}, nil
 	}
 	if !hasUnresolvedAssociation(state, def.identity()) {
 		return OpenResult{}, fmt.Errorf("hseh recover: definition %s does not need recovery", def.ID)
@@ -84,5 +69,5 @@ func recoverLocked(ctx context.Context, definitionID, workspaceID string, create
 	if err := herdr.FocusWorkspaceContext(ctx, workspaceID); err != nil {
 		return OpenResult{}, err
 	}
-	return OpenResult{Action: ActionReconnect, WorkspaceID: workspaceID, DefinitionID: def.ID}, nil
+	return OpenResult{Action: actionReconnect, WorkspaceID: workspaceID, DefinitionID: def.ID}, nil
 }

@@ -31,9 +31,11 @@ type Server struct {
 	// PaneReadText is the pane.read body; empty means "hello".
 	PaneReadText string
 
-	// Reads counts pane.read calls; Focused holds the last workspace.focus id.
-	Reads   atomic.Int32
-	Focused atomic.Value
+	// Reads counts pane.read calls; Focused and FocusedTab hold the last
+	// workspace.focus and tab.focus ids.
+	Reads      atomic.Int32
+	Focused    atomic.Value
+	FocusedTab atomic.Value
 
 	mu            sync.Mutex
 	failHits      int
@@ -176,6 +178,13 @@ func (s *Server) serve(conn net.Conn) {
 		_ = json.Unmarshal(req.Params, &params)
 		s.Focused.Store(params.WorkspaceID)
 		result = map[string]any{"type": "ok"}
+	case "tab.focus":
+		var params struct {
+			TabID string `json:"tab_id"`
+		}
+		_ = json.Unmarshal(req.Params, &params)
+		s.FocusedTab.Store(params.TabID)
+		result = map[string]any{"type": "ok"}
 	case "agent.focus":
 		var params struct {
 			Target string `json:"target"`
@@ -203,7 +212,7 @@ func (s *Server) serve(conn net.Conn) {
 		s.Snapshot.Workspaces = append(s.Snapshot.Workspaces, herdr.WorkspaceRow{WorkspaceID: ws, Label: params.Label, ActiveTabID: tab})
 		s.Snapshot.Tabs = append(s.Snapshot.Tabs, herdr.TabRow{TabID: tab, Label: params.Label})
 		s.Snapshot.Panes = append(s.Snapshot.Panes, herdr.PaneRow{PaneID: pane, WorkspaceID: ws, TabID: tab, Cwd: params.Cwd})
-		s.Snapshot.Layouts = append(s.Snapshot.Layouts, herdr.PaneLayout{WorkspaceID: ws, TabID: tab, FocusedPaneID: pane})
+		s.Snapshot.Layouts = append(s.Snapshot.Layouts, herdr.PaneLayout{TabID: tab, FocusedPaneID: pane})
 		result = map[string]any{
 			"type":      "workspace_created",
 			"workspace": map[string]any{"workspace_id": ws},

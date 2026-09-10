@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/regutierrez/hseh/internal/config"
 	"github.com/regutierrez/hseh/internal/herdr"
@@ -148,7 +149,7 @@ func Prune(history History, snapshot herdr.SessionSnapshot) History {
 	}
 	history.Spaces = filterStrings(history.Spaces, liveSpaces)
 	for _, id := range spaceOrder {
-		if !containsString(history.Spaces, id) {
+		if !slices.Contains(history.Spaces, id) {
 			history.Spaces = append(history.Spaces, id)
 		}
 	}
@@ -185,17 +186,16 @@ func Prune(history History, snapshot herdr.SessionSnapshot) History {
 	history.Occupants = occupants
 
 	var agents []AgentLiveID
-	seen := map[string]bool{}
+	seen := map[AgentLiveID]bool{}
 	for _, id := range history.Agents {
 		occupant, ok := history.Occupants[id.PaneID]
 		if !ok || occupant.Generation != id.Generation {
 			continue
 		}
-		key := id.String()
-		if seen[key] {
+		if seen[id] {
 			continue
 		}
-		seen[key] = true
+		seen[id] = true
 		agents = append(agents, id)
 	}
 	history.Agents = agents
@@ -332,7 +332,6 @@ func ApplyVerifiedOccupantTransition(history History, paneID, agentKind, session
 	if existing.AgentKind == agentKind && existing.SessionValue == sessionVal {
 		return history
 	}
-	rememberPaneGeneration(&history, paneID, existing.Generation)
 	next := nextPaneGeneration(history, paneID)
 	history.Occupants[paneID] = PaneOccupant{Generation: next, AgentKind: agentKind, SessionValue: sessionVal}
 	rememberPaneGeneration(&history, paneID, next)
@@ -346,15 +345,15 @@ func ApplyVerifiedOccupantTransition(history History, paneID, agentKind, session
 	return history
 }
 
-// SelectNextWorkspace chooses the previous space, then cycles in sidebar order.
-func SelectNextWorkspace(history History, snapshot herdr.SessionSnapshot, nowMs int64) (History, string) {
+// selectNextWorkspace chooses the previous space, then cycles in sidebar order.
+func selectNextWorkspace(history History, snapshot herdr.SessionSnapshot, nowMs int64) (History, string) {
 	var workspaceOrder []string
 	current := snapshot.FocusedWorkspaceID
 	for _, workspace := range snapshot.Workspaces {
 		if workspace.WorkspaceID == "" {
 			continue
 		}
-		if !containsString(workspaceOrder, workspace.WorkspaceID) {
+		if !slices.Contains(workspaceOrder, workspace.WorkspaceID) {
 			workspaceOrder = append(workspaceOrder, workspace.WorkspaceID)
 		}
 		if workspace.Focused && current == "" {
@@ -373,12 +372,12 @@ func SelectNextWorkspace(history History, snapshot herdr.SessionSnapshot, nowMs 
 	var order []string
 	if continuing {
 		for _, id := range history.Cycle.Order {
-			if containsString(workspaceOrder, id) {
+			if slices.Contains(workspaceOrder, id) {
 				order = append(order, id)
 			}
 		}
 		for _, id := range workspaceOrder {
-			if !containsString(order, id) {
+			if !slices.Contains(order, id) {
 				order = append(order, id)
 			}
 		}
@@ -421,20 +420,11 @@ func prependUnique(ids []string, id string) []string {
 func prependAgentID(ids []AgentLiveID, id AgentLiveID) []AgentLiveID {
 	out := []AgentLiveID{id}
 	for _, existing := range ids {
-		if existing.String() != id.String() {
+		if existing != id {
 			out = append(out, existing)
 		}
 	}
 	return out
-}
-
-func containsString(ids []string, target string) bool {
-	for _, id := range ids {
-		if id == target {
-			return true
-		}
-	}
-	return false
 }
 
 func removeString(ids []string, target string) []string {
@@ -485,7 +475,7 @@ func LoadPruned(snapshot herdr.SessionSnapshot, witness herdr.ContinuityWitness)
 func SwitchWorkspace(snapshot herdr.SessionSnapshot, witness herdr.ContinuityWitness, nowMs int64) (string, error) {
 	var target string
 	_, err := update(config.StateDir(), witness, func(history History) History {
-		history, target = SelectNextWorkspace(history, snapshot, nowMs)
+		history, target = selectNextWorkspace(history, snapshot, nowMs)
 		return history
 	})
 	return target, err

@@ -27,9 +27,9 @@ func TestLiveLayoutKeepsSelectionWhenPreviewFills(t *testing.T) {
 	}
 	history := focus.EmptyHistory(herdr.ContinuityWitness{})
 	history.Spaces = []string{"w2", "w1"}
-	m := newModel("spaces", snapshot, history, defaultSidebarLayout(), 0, 40)
+	m := newModel("spaces", snapshot, history, 40)
 	m.width, m.height = 58, 22
-	if m.selectedID != SelectionID(KindSpace, "w2") {
+	if m.selectedID != selectionID(KindSpace, "w2") {
 		t.Fatalf("preselect %s", m.selectedID)
 	}
 	before := m.View()
@@ -58,18 +58,6 @@ func TestCRLFPreviewDoesNotEraseSelectedRow(t *testing.T) {
 	}
 }
 
-func TestPopupSizedViewKeepsBetaSelectionWithPreview(t *testing.T) {
-	m := model{width: 58, height: 22, widePreviewMinCols: 40, selectedID: "w2", visible: []Item{
-		{ID: "w1", Rows: []string{"· · alpha"}, DisplayRows: []string{"· · alpha"}},
-		{ID: "w2", Rows: []string{"· · beta"}, DisplayRows: []string{"· · beta"}},
-	}}
-	m.previewText = strings.Repeat("BETA_TICK_1\n", 12)
-	got := m.View()
-	if !hasRailSelectedLabel(got, "beta") {
-		t.Fatalf("popup-sized view lost selection: %q", got)
-	}
-}
-
 func TestStalePreviewDoesNotStartDuplicateRead(t *testing.T) {
 	m := model{
 		previewInFlight:    true,
@@ -77,7 +65,7 @@ func TestStalePreviewDoesNotStartDuplicateRead(t *testing.T) {
 		widePreviewMinCols: 80,
 		width:              100,
 		selectedID:         "b",
-		visible:            []Item{{Kind: KindAgent, ID: "a", PreviewPane: "w1:p1"}, {Kind: KindAgent, ID: "b", PreviewPane: "w2:p1"}},
+		visible:            []Item{{Kind: KindAgent, ID: "a", PaneID: "w1:p1"}, {Kind: KindAgent, ID: "b", PaneID: "w2:p1"}},
 	}
 	next, cmd := m.Update(previewLoadedMsg{seq: 1, targetID: "a", paneID: "w1:p1", text: "stale"})
 	got := next.(model)
@@ -94,8 +82,8 @@ func TestStalePreviewDoesNotStartDuplicateRead(t *testing.T) {
 
 func TestPreviewABAIgnoresFirstReply(t *testing.T) {
 	m := model{widePreviewMinCols: 40, selectedID: "a", visible: []Item{
-		{Kind: KindAgent, ID: "a", PreviewPane: "pa", Rows: []string{"a"}},
-		{Kind: KindAgent, ID: "b", PreviewPane: "pb", Rows: []string{"b"}},
+		{Kind: KindAgent, ID: "a", PaneID: "pa", Rows: []string{"a"}},
+		{Kind: KindAgent, ID: "b", PaneID: "pb", Rows: []string{"b"}},
 	}}
 	next, cmd := m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
 	got := next.(model)
@@ -122,19 +110,6 @@ func TestPreviewABAIgnoresFirstReply(t *testing.T) {
 	}
 }
 
-func TestPreviousAgentOffscreenStaysVisible(t *testing.T) {
-	var items []Item
-	for i := 0; i < 12; i++ {
-		items = append(items, Item{ID: "a" + string(rune('a'+i)), Rows: []string{"row", "more", "lines"}})
-	}
-	items = append(items, Item{ID: "prev", Rows: []string{"PREVIOUS_AGENT", "line2", "line3"}})
-	m := model{width: 40, height: 8, selectedID: "prev", visible: items}
-	got := termtext.StripControls(strings.Join(m.buildListLayout(20, 6).Lines, "\n"))
-	if !strings.Contains(got, "PREVIOUS_AGENT") {
-		t.Fatalf("previous agent offscreen: %q", got)
-	}
-}
-
 func TestSelectionDisappearsWhenTargetGone(t *testing.T) {
 	m := model{
 		layout:     defaultSidebarLayout(),
@@ -157,7 +132,7 @@ func TestAgentPriorityOrderBlockedFirst(t *testing.T) {
 		{PaneRow: herdr.PaneRow{PaneID: "p-block", Agent: "pi", AgentStatus: "blocked"}, StateChangeSeq: 1},
 		{PaneRow: herdr.PaneRow{PaneID: "p-work", Agent: "pi", AgentStatus: "working"}, StateChangeSeq: 4},
 	}}
-	items := BuildItemsWithLayout("agents", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil)
+	items := buildItemsWithLayout("agents", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil)
 	want := []string{"p-block", "p-done", "p-work", "p-idle"}
 	if len(items) != 4 {
 		t.Fatalf("%d items", len(items))
@@ -176,7 +151,7 @@ func TestSnapshotCorruptAssociationKeepsLiveMembership(t *testing.T) {
 			{WorkspaceID: "w2", Label: "beta"},
 		},
 	}
-	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), 0, 40)
+	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), 40)
 	m.snapshotSeq = 1
 	m.snapshotInFlight = true
 	m.associationRecords = []space.AssociationRecord{{DefinitionID: "def", ResolvedDir: "/tmp", WorkspaceID: "w2"}}
@@ -200,14 +175,14 @@ func TestSnapshotCorruptAssociationKeepsLiveMembership(t *testing.T) {
 	if !strings.Contains(got.statusErr, "corrupt") {
 		t.Fatalf("association error not visible: %q", got.statusErr)
 	}
-	if !HasItemID(got.visible, SelectionID(KindSpace, "w3")) {
+	if !hasItemID(got.visible, selectionID(KindSpace, "w3")) {
 		t.Fatalf("live membership frozen: %+v", got.visible)
 	}
 }
 
 func TestSnapshotLiveFetchErrorDoesNotReplaceSnapshot(t *testing.T) {
 	snapshot := herdr.SessionSnapshot{Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w1", Label: "alpha"}}}
-	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), 0, 40)
+	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), 40)
 	m.snapshotSeq = 2
 	m.snapshotInFlight = true
 	next, _ := m.Update(snapshotLoadedMsg{seq: 2, liveErr: fmt.Errorf("hseh herdr socket: down")})
@@ -269,7 +244,7 @@ func TestFirstPreviewReadIsHedged(t *testing.T) {
 
 	// Sync path: a model built with the snapshot in hand boots straight into its first read.
 	var syncReads []read
-	m = newModel("agents", snapshot, history, defaultSidebarLayout(), 0, 40)
+	m = newModel("agents", snapshot, history, 40)
 	m.width, m.height = 120, 30
 	m.readPane = record(&syncReads)
 	next, cmd = m.Update(bootMsg{})

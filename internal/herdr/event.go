@@ -30,12 +30,12 @@ func PluginEventFromEnv() (name string, data PluginEventData, err error) {
 	if raw == "" {
 		return "", PluginEventData{}, fmt.Errorf("hseh event: HERDR_PLUGIN_EVENT_JSON is missing")
 	}
-	data, err = ParsePluginEventJSON(raw)
+	data, err = parsePluginEventJSON(raw)
 	return name, data, err
 }
 
-// ParsePluginEventJSON decodes the data member of a plugin event envelope.
-func ParsePluginEventJSON(raw string) (PluginEventData, error) {
+// parsePluginEventJSON decodes the data member of a plugin event envelope.
+func parsePluginEventJSON(raw string) (PluginEventData, error) {
 	var envelope struct {
 		Data json.RawMessage `json:"data"`
 	}

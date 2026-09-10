@@ -29,25 +29,25 @@ func TestSpaceRowsStripTitleControls(t *testing.T) {
 
 func TestPreselectPickerItemIDPrefersPreviousNotCurrent(t *testing.T) {
 	items := []Item{
-		{Kind: KindSpace, ID: SelectionID(KindSpace, "w1"), WorkspaceID: "w1"},
-		{Kind: KindSpace, ID: SelectionID(KindSpace, "w2"), WorkspaceID: "w2"},
+		{Kind: KindSpace, ID: selectionID(KindSpace, "w1"), WorkspaceID: "w1"},
+		{Kind: KindSpace, ID: selectionID(KindSpace, "w2"), WorkspaceID: "w2"},
 	}
 	history := focus.History{Spaces: []string{"w1", "w2"}}
-	launch := LaunchContext{CurrentSpace: "w1"}
-	got := PreselectItemID(ViewSpaces, items, history, launch)
-	if got != SelectionID(KindSpace, "w2") {
+	launch := launchContext{CurrentSpace: "w1"}
+	got := preselectItemID(ViewSpaces, items, history, launch)
+	if got != selectionID(KindSpace, "w2") {
 		t.Fatalf("got %q", got)
 	}
 }
 
 func TestPreselectPickerItemIDAgentBelowPriority(t *testing.T) {
 	items := []Item{
-		{Kind: KindAgent, ID: SelectionID(KindAgent, "w1:p1#1"), PaneID: "w1:p1"},
-		{Kind: KindAgent, ID: SelectionID(KindAgent, "w1:p2#1"), PaneID: "w1:p2"},
+		{Kind: KindAgent, ID: selectionID(KindAgent, "w1:p1#1"), PaneID: "w1:p1"},
+		{Kind: KindAgent, ID: selectionID(KindAgent, "w1:p2#1"), PaneID: "w1:p2"},
 	}
 	history := focus.History{Agents: []focus.AgentLiveID{{PaneID: "w1:p2", Generation: 1}}}
-	got := PreselectItemID(ViewAgents, items, history, LaunchContext{CurrentAgent: "w1:p9#1"})
-	if got != SelectionID(KindAgent, "w1:p2#1") {
+	got := preselectItemID(ViewAgents, items, history, launchContext{CurrentAgent: "w1:p9#1"})
+	if got != selectionID(KindAgent, "w1:p2#1") {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -64,10 +64,10 @@ func TestFilterPickerItemsKeepsViewOrderOnScoreTie(t *testing.T) {
 }
 
 func TestPreselectSkipsAbsentHistoryTarget(t *testing.T) {
-	items := []Item{{Kind: KindAgent, ID: SelectionID(KindAgent, "w1:p2#1"), PaneID: "w1:p2"}}
+	items := []Item{{Kind: KindAgent, ID: selectionID(KindAgent, "w1:p2#1"), PaneID: "w1:p2"}}
 	history := focus.History{Agents: []focus.AgentLiveID{{PaneID: "w1:p1", Generation: 1}, {PaneID: "w1:p2", Generation: 1}}}
-	got := PreselectItemID(ViewAgents, items, history, LaunchContext{CurrentAgent: "w9:p9#1"})
-	if got != SelectionID(KindAgent, "w1:p2#1") {
+	got := preselectItemID(ViewAgents, items, history, launchContext{CurrentAgent: "w9:p9#1"})
+	if got != selectionID(KindAgent, "w1:p2#1") {
 		t.Fatalf("absent history target offered: %q", got)
 	}
 }

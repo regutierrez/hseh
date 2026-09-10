@@ -13,11 +13,11 @@ func TestParseStatusCountsRenameConflictAndDivergence(t *testing.T) {
 	payload := "# branch.oid abcdef123456\x00# branch.head topic\x00# branch.ab +2 -3\x00" +
 		"2 R. N... 100644 100644 100644 abc abc R100 renamed\x00? original-name\x00" +
 		"? untracked\x00u UU N... conflict\x00"
-	got := ParseStatus(payload)
+	got := parseStatus(payload)
 	if got.Branch != "topic" || got.Status != "+1 ?1 !1 ↑2 ↓3" {
 		t.Fatalf("%+v", got)
 	}
-	detached := ParseStatus("# branch.oid abcdef123456\x00# branch.head (detached)\x00")
+	detached := parseStatus("# branch.oid abcdef123456\x00# branch.head (detached)\x00")
 	if detached.Branch != "@abcdef1" || detached.Status != "" {
 		t.Fatalf("%+v", detached)
 	}

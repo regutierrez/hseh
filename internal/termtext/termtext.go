@@ -41,20 +41,7 @@ func filterTerminalBytes(input string, keepSGR bool) string {
 			i += size + consumeStringTerminator(input[i+size:])
 			continue
 		}
-		if r == 0x9c || r == 0x07 || r == 0x18 || r == 0x1a {
-			i += size
-			continue
-		}
 		if r >= 0x80 && r <= 0x9f {
-			i += size
-			continue
-		}
-		if r == '\r' {
-			next := i + size
-			if next < len(input) && input[next] == '\n' {
-				i = next
-				continue
-			}
 			i += size
 			continue
 		}

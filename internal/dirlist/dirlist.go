@@ -80,7 +80,8 @@ func readEza(parent context.Context, eza, dir string) (string, error) {
 	}
 	if err != nil {
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
-			return "", errors.New(firstLine(msg))
+			line, _, _ := strings.Cut(msg, "\n")
+			return "", errors.New(line)
 		}
 		return "", err
 	}
@@ -118,11 +119,4 @@ func capLines(text string) string {
 		return text
 	}
 	return strings.Join(lines[:maxLines], "\n") + fmt.Sprintf("\n… %d more", len(lines)-maxLines)
-}
-
-func firstLine(text string) string {
-	if i := strings.IndexByte(text, '\n'); i >= 0 {
-		return text[:i]
-	}
-	return text
 }

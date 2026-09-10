@@ -90,9 +90,6 @@ func sanitizeSessionKey(raw string) string {
 		}
 		b.WriteByte('_')
 	}
-	if b.Len() == 0 {
-		return "session"
-	}
 	return b.String()
 }
 

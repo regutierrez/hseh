@@ -52,7 +52,7 @@ func TestCallHerdrMethodWritesRequestBeforeWitnessRead(t *testing.T) {
 
 	t.Setenv("HERDR_SOCKET_PATH", socketPath)
 	var result map[string]any
-	witness, err := CallContext(context.Background(), "session.snapshot", map[string]any{}, &result)
+	witness, err := callContext(context.Background(), "session.snapshot", map[string]any{}, &result)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestCallHerdrMethodWitnessSurvivesPeerClose(t *testing.T) {
 	}()
 	t.Setenv("HERDR_SOCKET_PATH", socketPath)
 	var result json.RawMessage
-	witness, err := CallContext(context.Background(), "workspace.focus", map[string]any{"workspace_id": "w1"}, &result)
+	witness, err := callContext(context.Background(), "workspace.focus", map[string]any{"workspace_id": "w1"}, &result)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestCallHerdrMethodHedgesSlowIdempotentReply(t *testing.T) {
 	}()
 	t.Setenv("HERDR_SOCKET_PATH", socketPath)
 	var result map[string]any
-	if _, err := CallContext(WithHedge(context.Background()), "session.snapshot", map[string]any{}, &result); err != nil {
+	if _, err := callContext(WithHedge(context.Background()), "session.snapshot", map[string]any{}, &result); err != nil {
 		t.Fatal(err)
 	}
 	// The hedged connection's reply arriving at all proves the slow primary was not waited on.
@@ -148,7 +148,7 @@ func TestCallHerdrMethodHedgesSlowIdempotentReply(t *testing.T) {
 	// Non-idempotent methods must never be resent, even when hedging is allowed.
 	atomic.StoreInt32(&connCount, 0)
 	var raw json.RawMessage
-	if _, err := CallContext(WithHedge(context.Background()), "workspace.focus", map[string]any{"workspace_id": "w1"}, &raw); err != nil {
+	if _, err := callContext(WithHedge(context.Background()), "workspace.focus", map[string]any{"workspace_id": "w1"}, &raw); err != nil {
 		t.Fatal(err)
 	}
 	if got := atomic.LoadInt32(&connCount); got != 1 {
@@ -156,7 +156,7 @@ func TestCallHerdrMethodHedgesSlowIdempotentReply(t *testing.T) {
 	}
 	// Background polls (no hedge marker) wait for the slow reply rather than duplicating work.
 	atomic.StoreInt32(&connCount, 0)
-	if _, err := CallContext(context.Background(), "session.snapshot", map[string]any{}, &result); err != nil {
+	if _, err := callContext(context.Background(), "session.snapshot", map[string]any{}, &result); err != nil {
 		t.Fatal(err)
 	}
 	if got := atomic.LoadInt32(&connCount); got != 1 {

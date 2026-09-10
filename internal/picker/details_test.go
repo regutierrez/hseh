@@ -14,7 +14,7 @@ func TestHerdrDotGlyphsAndColors(t *testing.T) {
 		if got := stateIconGlyph(c.status, "dots"); got != c.glyph {
 			t.Errorf("%s glyph %s want %s", c.status, got, c.glyph)
 		}
-		got := stylePlainToken(SidebarToken{Name: "state_icon"}, c.glyph, c.status)
+		got := stylePlainToken(sidebarToken{Name: "state_icon"}, c.glyph, c.status)
 		if !strings.Contains(got, "\x1b["+c.color+"m") {
 			t.Errorf("%s lost terminal palette color: %q", c.status, got)
 		}

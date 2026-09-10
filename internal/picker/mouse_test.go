@@ -1,6 +1,7 @@
 package picker
 
 import (
+	"slices"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -15,7 +16,7 @@ func TestPreviewStackedAt99SideBySideAt100(t *testing.T) {
 		widePreviewMinCols: config.DefaultWidePreviewMinColumns,
 		snapshotReady:      true,
 		selectedID:         "w2",
-		visible:            []Item{{Kind: KindAgent, ID: "w2", PreviewPane: "w2:p1"}},
+		visible:            []Item{{Kind: KindAgent, ID: "w2", PaneID: "w2:p1"}},
 	}
 	next, cmd := m.Update(tea.WindowSizeMsg{Width: 99, Height: 24})
 	got := next.(model)
@@ -92,19 +93,12 @@ func TestClickIgnoresHeaderPreviewSeparatorAndPadding(t *testing.T) {
 		t.Fatalf("preview click selected %q", id)
 	}
 	layout := m.buildListLayout(listWidth, m.frame().listH)
-	sepY := -1
-	for i, id := range layout.ItemIDs {
-		if i > 0 && id == "" && layout.Lines[i] != "" || (id == "" && i > 0 && i < len(layout.ItemIDs)-1) {
-			if layout.ItemIDs[i] == "" {
-				sepY = i
-				break
-			}
-		}
+	sepY := slices.Index(layout.ItemIDs, "")
+	if sepY < 0 {
+		t.Fatalf("no separator row in %q", layout.ItemIDs)
 	}
-	if sepY >= 0 {
-		if id := m.itemIDAtMouse(1, tabRows+sepY); id != "" {
-			t.Fatalf("separator click selected %q", id)
-		}
+	if id := m.itemIDAtMouse(1, tabRows+sepY); id != "" {
+		t.Fatalf("separator click selected %q", id)
 	}
 	if id := m.itemIDAtMouse(-1, 2); id != "" {
 		t.Fatalf("padding click selected %q", id)
@@ -167,7 +161,7 @@ func TestMouseReleaseAndRightClickDoNotSelect(t *testing.T) {
 
 func TestClickSelectsWithoutFocusingHerdr(t *testing.T) {
 	snapshot := herdr.SessionSnapshot{
-		Version: "0.9.0", FocusedWorkspaceID: "w1",
+		FocusedWorkspaceID: "w1",
 		Workspaces: []herdr.WorkspaceRow{
 			{WorkspaceID: "w1", Label: "alpha", ActiveTabID: "w1:t1"},
 			{WorkspaceID: "w2", Label: "beta", ActiveTabID: "w2:t1"},
@@ -179,12 +173,12 @@ func TestClickSelectsWithoutFocusingHerdr(t *testing.T) {
 	t.Setenv("HERDR_SOCKET_PATH", socket)
 	t.Setenv("HERDR_PLUGIN_STATE_DIR", state)
 	t.Setenv("HERDR_SESSION", "hseh-test")
-	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), 0, 40)
+	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), 40)
 	m.width, m.height = 80, 12
 	layout := m.buildListLayout(m.frame().listW, m.frame().listH)
 	y := -1
 	for i, id := range layout.ItemIDs {
-		if id == SelectionID(KindSpace, "w2") {
+		if id == selectionID(KindSpace, "w2") {
 			y = i
 			break
 		}
@@ -194,7 +188,7 @@ func TestClickSelectsWithoutFocusingHerdr(t *testing.T) {
 	}
 	next, cmd := m.Update(tea.MouseMsg{X: 1, Y: tabRows + y, Action: tea.MouseActionPress, Button: tea.MouseButtonLeft})
 	got := next.(model)
-	if got.selectedID != SelectionID(KindSpace, "w2") {
+	if got.selectedID != selectionID(KindSpace, "w2") {
 		t.Fatalf("selected %s", got.selectedID)
 	}
 	if cmd != nil {

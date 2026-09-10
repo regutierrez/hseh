@@ -40,17 +40,16 @@ func loadLive(ctx context.Context) (liveState, error) {
 	return live, nil
 }
 
-// loadCatalog reads the Herdr sidebar layout and the reusable-space definitions.
-func loadCatalog() (SidebarLayout, []space.Definition, []string) {
-	layout, errs := LoadSidebarLayout("")
+func loadCatalog() (sidebarLayout, []space.Definition, []string) {
+	layout, errs := loadSidebarLayout("")
 	definitions, defErrs := space.LoadDefinitions(config.SpaceDefinitionsDir())
 	return layout, definitions, append(errs, defErrs...)
 }
 
 // assembleItems is the one place rows are built: live rows first, then unopened templates.
-func assembleItems(view string, live liveState, layout SidebarLayout, definitions []space.Definition, git map[string]gitinfo.WorkspaceGit) []Item {
-	items := BuildItemsWithLayout(view, live.snapshot, live.history, layout, git)
-	return AppendUnopenedDefinitionItems(items, view, live.snapshot, definitions, live.records, live.unresolved, git)
+func assembleItems(view string, live liveState, layout sidebarLayout, definitions []space.Definition, git map[string]gitinfo.WorkspaceGit) []Item {
+	items := buildItemsWithLayout(view, live.snapshot, live.history, layout, git)
+	return appendUnopenedDefinitionItems(items, view, live.snapshot, definitions, live.records, live.unresolved, git)
 }
 
 // LoadListDocument assembles the rows the popup would show, for `hseh list --json`.
@@ -71,7 +70,7 @@ func LoadListDocument(ctx context.Context, view string) (ListDocument, error) {
 	}
 	var git map[string]gitinfo.WorkspaceGit
 	if view != ViewAgents {
-		git = LoadGit(ctx, live.snapshot, definitions)
+		git = loadGit(ctx, live.snapshot, definitions)
 	}
 	return ListDocument{
 		Session: ListSession{Name: config.SessionName(), SocketPath: config.SocketPath()},

@@ -38,7 +38,7 @@ func AssociationIdentityKey(definitionID, resolvedDir string) string {
 	return definitionID + "\n" + resolvedDir
 }
 
-func LoadAssociationFile(stateDir string) (AssociationState, error) {
+func loadAssociationFile(stateDir string) (AssociationState, error) {
 	payload, err := os.ReadFile(AssociationFilePath(stateDir))
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -81,7 +81,6 @@ func associationWitnessMismatch(state AssociationState, live herdr.ContinuityWit
 	return !herdr.SameContinuityWitness(state.Witness, live)
 }
 
-// sameIdentity reports whether two records name the same definition id + resolved dir.
 func sameIdentity(a, b AssociationRecord) bool {
 	return a.DefinitionID == b.DefinitionID && a.ResolvedDir == b.ResolvedDir
 }
@@ -113,9 +112,9 @@ func removeUnresolvedAssociation(state AssociationState, identity AssociationRec
 	return state
 }
 
-// ReconcileAssociationState folds mismatched current records into unresolved in memory.
+// reconcileAssociationState folds mismatched current records into unresolved in memory.
 // It does not write. Picker reads must not persist a witness reset.
-func ReconcileAssociationState(state AssociationState, live herdr.ContinuityWitness) AssociationState {
+func reconcileAssociationState(state AssociationState, live herdr.ContinuityWitness) AssociationState {
 	if state.Records == nil {
 		state.Records = []AssociationRecord{}
 	}
@@ -135,11 +134,11 @@ func ReconcileAssociationState(state AssociationState, live herdr.ContinuityWitn
 }
 
 func LoadReconciledAssociationState(stateDir string, live herdr.ContinuityWitness) (AssociationState, error) {
-	state, err := LoadAssociationFile(stateDir)
+	state, err := loadAssociationFile(stateDir)
 	if err != nil {
 		return AssociationState{}, err
 	}
-	return ReconcileAssociationState(state, live), nil
+	return reconcileAssociationState(state, live), nil
 }
 
 // RecoverUsage is the `hseh recover` argument contract, shared by the CLI parser and Recover.

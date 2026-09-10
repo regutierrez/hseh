@@ -50,8 +50,5 @@ func WithExclusiveContext(ctx context.Context, lockPath string, fn func() error)
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
 	return fn()
 }

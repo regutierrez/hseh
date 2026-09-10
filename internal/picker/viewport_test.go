@@ -35,8 +35,8 @@ func TestSpaceRowIsOneLineWithBadgeGitAndCheckoutRoot(t *testing.T) {
 	if item.Source != SourceHerdr || item.Path != "/home/u/hseh" {
 		t.Fatalf("source/path: %+v", item)
 	}
-	if item.PreviewPane != "" {
-		t.Fatalf("space rows preview a directory, not a pane: %q", item.PreviewPane)
+	if item.PaneID != "" {
+		t.Fatalf("space rows preview a directory, not a pane: %q", item.PaneID)
 	}
 	prefix, _ := statePrefix("idle", "dots")
 	want := prefix + herdrSourceIcon + " herdr    hseh  " + gitBranchIcon + " main ~2  /home/u/hseh"
@@ -229,11 +229,11 @@ func TestGitCoversTemplateDirectories(t *testing.T) {
 	}
 	hsehtest.Git(t, repo, "init", "-b", "main")
 	def := space.Definition{ID: "def-t", Name: "tmpl", ResolvedDir: repo, WorkingDir: repo}
-	got := LoadGit(context.Background(), herdr.SessionSnapshot{}, []space.Definition{def})
+	got := loadGit(context.Background(), herdr.SessionSnapshot{}, []space.Definition{def})
 	if got[repo].Branch != "main" || got[repo].Root != repo {
 		t.Fatalf("template git %+v", got)
 	}
-	m := newModel("spaces", herdr.SessionSnapshot{Version: "0.9.0"}, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), 0, 100)
+	m := newModel("spaces", herdr.SessionSnapshot{}, focus.EmptyHistory(herdr.ContinuityWitness{}), 100)
 	m.setSpaceCatalog([]space.Definition{def}, nil, nil, nil)
 	m.gitByDirectory = got
 	if row := m.catalogItems()[0].Rows[0]; !strings.Contains(row, gitBranchIcon+" main") {

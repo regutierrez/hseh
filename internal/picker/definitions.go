@@ -10,7 +10,7 @@ import (
 	"github.com/regutierrez/hseh/internal/space"
 )
 
-func SelectionID(kind, target string) string {
+func selectionID(kind, target string) string {
 	return kind + ":" + target
 }
 
@@ -30,11 +30,11 @@ func definitionItem(def space.Definition, needsRecovery bool, git gitinfo.Worksp
 		recovery = hints[1:]
 		preview = strings.Join(hints, "\n")
 	}
-	plain, display := renderSpaceRow(row, defaultSidebarLayout())
+	plain, display := renderSpaceRow(row, "") // templates carry no agent status
 	search := strings.Join([]string{plain, desc, space.SanitizeDisplayText(def.SourceFile), space.SanitizeDisplayText(filepath.Base(def.SourceFile))}, " ")
 	return Item{
 		Kind:         KindDefinition,
-		ID:           SelectionID(KindDefinition, def.ID),
+		ID:           selectionID(KindDefinition, def.ID),
 		DefinitionID: def.ID,
 		Label:        name,
 		Source:       SourceTemplate,
@@ -47,9 +47,9 @@ func definitionItem(def space.Definition, needsRecovery bool, git gitinfo.Worksp
 	}
 }
 
-// AppendUnopenedDefinitionItems adds a template row for every definition without a live
+// appendUnopenedDefinitionItems adds a template row for every definition without a live
 // associated workspace, sorted by name after the live rows.
-func AppendUnopenedDefinitionItems(items []Item, view string, snapshot herdr.SessionSnapshot, definitions []space.Definition, records, unresolved []space.AssociationRecord, git map[string]gitinfo.WorkspaceGit) []Item {
+func appendUnopenedDefinitionItems(items []Item, view string, snapshot herdr.SessionSnapshot, definitions []space.Definition, records, unresolved []space.AssociationRecord, git map[string]gitinfo.WorkspaceGit) []Item {
 	if view == ViewAgents {
 		return items
 	}

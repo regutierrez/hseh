@@ -39,7 +39,7 @@ func Read(ctx context.Context, dir string) WorkspaceGit {
 		span("err", err)
 		return WorkspaceGit{Status: "git status unavailable", Root: root}
 	}
-	result := ParseStatus(string(output))
+	result := parseStatus(string(output))
 	result.Root = root
 	return result
 }
@@ -61,7 +61,7 @@ func gitCommand(ctx context.Context, dir string, args ...string) *exec.Cmd {
 	return cmd
 }
 
-func ParseStatus(output string) WorkspaceGit {
+func parseStatus(output string) WorkspaceGit {
 	var result WorkspaceGit
 	var oid string
 	var staged, modified, untracked, conflicts, ahead, behind int

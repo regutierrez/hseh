@@ -7,16 +7,17 @@ import (
 	"time"
 
 	"github.com/regutierrez/hseh/internal/picker"
-	"github.com/regutierrez/hseh/internal/space"
 	"github.com/regutierrez/hseh/internal/trace"
 )
 
 func main() {
-	start := []any{"args", strings.Join(os.Args[1:], " "), "unix_ms", time.Now().UnixMilli()}
-	if age, ok := trace.ProcessAge(); ok {
-		start = append(start, "since_exec_ms", age.Milliseconds())
+	if trace.Enabled() {
+		start := []any{"args", strings.Join(os.Args[1:], " "), "unix_ms", time.Now().UnixMilli()}
+		if age, ok := trace.ProcessAge(); ok {
+			start = append(start, "since_exec_ms", age.Milliseconds())
+		}
+		trace.Event("process.start", start...)
 	}
-	trace.Event("process.start", start...)
 	if err := runHseh(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
@@ -51,7 +52,7 @@ func runHseh(args []string) error {
 	case "event":
 		return runPluginEvent()
 	case "open":
-		if len(args) < 2 || strings.TrimSpace(args[1]) == "" {
+		if len(args) < 2 {
 			return fmt.Errorf("hseh open: definition id is required")
 		}
 		return runOpenReusableSpace(args[1])
@@ -92,7 +93,8 @@ func parseListArgs(args []string) (view string, err error) {
 	return view, nil
 }
 
-// parseRecoverArgs accepts `<definition-id>` plus exactly one of `--create` or `--workspace <id>`.
+// parseRecoverArgs accepts `<definition-id>` plus `--create` and/or `--workspace <id>`;
+// space.Recover enforces that exactly one is given.
 func parseRecoverArgs(args []string) (definitionID, workspaceID string, create bool, err error) {
 	if len(args) == 0 || strings.TrimSpace(args[0]) == "" || strings.HasPrefix(args[0], "-") {
 		return "", "", false, fmt.Errorf("hseh recover: definition id is required")
@@ -127,9 +129,6 @@ func parseRecoverArgs(args []string) (definitionID, workspaceID string, create b
 		default:
 			return "", "", false, fmt.Errorf("hseh recover: unknown argument %s", arg)
 		}
-	}
-	if seenCreate == seenWorkspace {
-		return "", "", false, fmt.Errorf("hseh recover: %s", space.RecoverUsage)
 	}
 	return definitionID, workspaceID, create, nil
 }

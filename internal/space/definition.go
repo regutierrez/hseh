@@ -327,11 +327,7 @@ func LoadDefinitions(dir string) ([]Definition, []string) {
 		}
 		return nil, []string{fmt.Sprintf("hseh definition: read %s: %v", dir, err)}
 	}
-	type loaded struct {
-		def  Definition
-		file string
-	}
-	var loadedDefs []loaded
+	var loadedDefs []Definition
 	var errs []string
 	for _, entry := range entries {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".toml") {
@@ -349,23 +345,23 @@ func LoadDefinitions(dir string) ([]Definition, []string) {
 			continue
 		}
 		def.ResolvedDir = resolved
-		loadedDefs = append(loadedDefs, loaded{def: def, file: entry.Name()})
+		loadedDefs = append(loadedDefs, def)
 	}
-	byID := map[string][]loaded{}
-	for _, item := range loadedDefs {
-		byID[item.def.ID] = append(byID[item.def.ID], item)
+	byID := map[string][]Definition{}
+	for _, def := range loadedDefs {
+		byID[def.ID] = append(byID[def.ID], def)
 	}
 	var defs []Definition
 	for id, items := range byID {
 		if len(items) > 1 {
 			var files []string
 			for _, item := range items {
-				files = append(files, item.file)
+				files = append(files, item.SourceFile)
 			}
 			errs = append(errs, fmt.Sprintf("hseh definition: duplicate id %s in %s", id, strings.Join(files, ", ")))
 			continue
 		}
-		defs = append(defs, items[0].def)
+		defs = append(defs, items[0])
 	}
 	return defs, errs
 }

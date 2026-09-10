@@ -13,18 +13,17 @@ import (
 )
 
 const (
-	ActionFocus     = "focus"
-	ActionAdopt     = "adopt"
-	ActionCreate    = "create"
-	ActionReconnect = "reconnect"
+	actionFocus     = "focus"
+	actionAdopt     = "adopt"
+	actionCreate    = "create"
+	actionReconnect = "reconnect"
 )
 
 // OpenResult is the caller-visible outcome of create-or-focus.
 type OpenResult struct {
-	Action            string
-	WorkspaceID       string
-	SubmittedCommands int
-	DefinitionID      string
+	Action       string
+	WorkspaceID  string
+	DefinitionID string
 }
 
 // loadDefinition finds one definition by id; cmd names the command for error messages.
@@ -40,8 +39,14 @@ func loadDefinition(cmd, definitionID string) (Definition, error) {
 	return Definition{}, fmt.Errorf("hseh %s: definition %s not found", cmd, definitionID)
 }
 
-func withOpenLock(ctx context.Context, fn func() error) error {
-	return lockfile.WithExclusiveContext(ctx, openLockPath(config.StateDir()), fn)
+func withOpenLock(ctx context.Context, fn func() (OpenResult, error)) (OpenResult, error) {
+	var result OpenResult
+	err := lockfile.WithExclusiveContext(ctx, openLockPath(config.StateDir()), func() error {
+		var innerErr error
+		result, innerErr = fn()
+		return innerErr
+	})
+	return result, err
 }
 
 func workspaceGitCheckoutDir(workspace herdr.WorkspaceRow) string {
@@ -155,21 +160,15 @@ func createSpace(ctx context.Context, stateDir string, state AssociationState, d
 	record := def.identity()
 	record.WorkspaceID = workspaceID
 	if err := persistCreatedAssociation(stateDir, state, record); err != nil {
-		return OpenResult{Action: ActionCreate, WorkspaceID: workspaceID, DefinitionID: def.ID}, fmt.Errorf("hseh create %s: persist association after workspace.create %s: %w", def.ID, workspaceID, err)
+		return OpenResult{Action: actionCreate, WorkspaceID: workspaceID, DefinitionID: def.ID}, fmt.Errorf("hseh create %s: persist association after workspace.create %s: %w", def.ID, workspaceID, err)
 	}
-	submitted, err := applyLayout(ctx, def, dirs, workspaceID, rootTabID, rootPaneID)
-	return OpenResult{Action: ActionCreate, WorkspaceID: workspaceID, SubmittedCommands: submitted, DefinitionID: def.ID}, err
+	err = applyLayout(ctx, def, dirs, workspaceID, rootTabID, rootPaneID)
+	return OpenResult{Action: actionCreate, WorkspaceID: workspaceID, DefinitionID: def.ID}, err
 }
 
 func openLocked(ctx context.Context, definitionID string) (OpenResult, error) {
-	if err := ctx.Err(); err != nil {
-		return OpenResult{}, err
-	}
 	def, err := loadDefinition("open", definitionID)
 	if err != nil {
-		return OpenResult{}, err
-	}
-	if err := ctx.Err(); err != nil {
 		return OpenResult{}, err
 	}
 	snapshot, witness, err := herdr.LoadSessionSnapshotContext(ctx)
@@ -192,7 +191,7 @@ func openLocked(ctx context.Context, definitionID string) (OpenResult, error) {
 		if err := herdr.FocusWorkspaceContext(ctx, workspaceID); err != nil {
 			return OpenResult{}, err
 		}
-		return OpenResult{Action: ActionFocus, WorkspaceID: workspaceID, DefinitionID: def.ID}, nil
+		return OpenResult{Action: actionFocus, WorkspaceID: workspaceID, DefinitionID: def.ID}, nil
 	}
 	if hasUnresolvedAssociation(state, def.identity()) {
 		return OpenResult{}, recoveryNeededError(def.ID)
@@ -208,7 +207,7 @@ func openLocked(ctx context.Context, definitionID string) (OpenResult, error) {
 		if err := herdr.FocusWorkspaceContext(ctx, record.WorkspaceID); err != nil {
 			return OpenResult{}, err
 		}
-		return OpenResult{Action: ActionAdopt, WorkspaceID: record.WorkspaceID, DefinitionID: def.ID}, nil
+		return OpenResult{Action: actionAdopt, WorkspaceID: record.WorkspaceID, DefinitionID: def.ID}, nil
 	}
 	return createSpace(ctx, stateDir, state, def)
 }
@@ -219,11 +218,5 @@ func Open(ctx context.Context, definitionID string) (OpenResult, error) {
 	if definitionID == "" {
 		return OpenResult{}, fmt.Errorf("hseh open: definition id is required")
 	}
-	var result OpenResult
-	err := withOpenLock(ctx, func() error {
-		var innerErr error
-		result, innerErr = openLocked(ctx, definitionID)
-		return innerErr
-	})
-	return result, err
+	return withOpenLock(ctx, func() (OpenResult, error) { return openLocked(ctx, definitionID) })
 }

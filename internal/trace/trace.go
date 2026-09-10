@@ -11,12 +11,6 @@ import (
 	"github.com/regutierrez/hseh/internal/config"
 )
 
-// Lines look like:
-//
-//	+123.456ms socket.call dur=0.482ms method=session.snapshot bytes=16645
-//
-// The leading offset is relative to process start. Summaries are meant for
-// sort and awk, not a dashboard.
 var (
 	processStart = time.Now()
 	mu           sync.Mutex
@@ -30,7 +24,7 @@ var (
 // which blocks for termenv's 5s timeout on terminals that never answer.
 // ok is false where /proc is unavailable.
 func ProcessAge() (age time.Duration, ok bool) {
-	stat, err := os.ReadFile("/proc/self/stat")
+	startText, err := ProcStartTicks(os.Getpid())
 	if err != nil {
 		return 0, false
 	}
@@ -38,16 +32,7 @@ func ProcessAge() (age time.Duration, ok bool) {
 	if err != nil {
 		return 0, false
 	}
-	text := string(stat)
-	closeParen := strings.LastIndex(text, ")")
-	if closeParen < 0 {
-		return 0, false
-	}
-	fields := strings.Fields(text[closeParen+2:])
-	if len(fields) < 20 {
-		return 0, false
-	}
-	startTicks, err := strconv.ParseFloat(fields[19], 64)
+	startTicks, err := strconv.ParseFloat(startText, 64)
 	if err != nil {
 		return 0, false
 	}
@@ -57,6 +42,27 @@ func ProcessAge() (age time.Duration, ok bool) {
 	}
 	const clockTicksPerSecond = 100
 	return time.Duration((upSeconds - startTicks/clockTicksPerSecond) * float64(time.Second)), true
+}
+
+// ProcStartTicks returns the raw starttime field of /proc/<pid>/stat: clock
+// ticks since boot when the process started, which together with the pid
+// identifies one process incarnation.
+func ProcStartTicks(pid int) (string, error) {
+	path := "/proc/" + strconv.Itoa(pid) + "/stat"
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	text := string(payload)
+	closeParen := strings.LastIndex(text, ")")
+	if closeParen < 0 || closeParen+2 >= len(text) {
+		return "", fmt.Errorf("%s: missing comm", path)
+	}
+	fields := strings.Fields(text[closeParen+2:])
+	if len(fields) < 20 {
+		return "", fmt.Errorf("%s: too short", path)
+	}
+	return fields[19], nil
 }
 
 func Enabled() bool {
@@ -101,6 +107,12 @@ func Span(name string, kv ...any) func(more ...any) {
 	}
 }
 
+// write emits one line:
+//
+//	+123.456ms socket.call dur=0.482ms method=session.snapshot bytes=16645
+//
+// The leading offset is relative to process start. Summaries are meant for
+// sort and awk, not a dashboard.
 func write(name string, dur time.Duration, kv []any) {
 	var b strings.Builder
 	fmt.Fprintf(&b, "+%.3fms %s", float64(time.Since(processStart).Microseconds())/1000, name)

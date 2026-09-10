@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -26,14 +27,28 @@ func readSpaceAssociationFile(t *testing.T, stateDir string) space.AssociationSt
 	return state
 }
 
-func TestParseRecoverArgsRejectsUnknownAndMissingChoice(t *testing.T) {
+// seedStaleAssociation writes an association file whose witness names a dead peer, so the
+// next compiled invocation sees every record as needing recovery.
+func seedStaleAssociation(t *testing.T, socket, stateDir string, peerPID int, records ...space.AssociationRecord) {
+	t.Helper()
+	useHsehTestSession(t, stateDir)
+	stale := space.AssociationState{
+		Witness: herdr.ContinuityWitness{SocketPath: socket, PeerPID: peerPID, PeerStartTime: "1", BootTime: "1"},
+		Records: records,
+	}
+	if err := space.WriteAssociationFile(stateDir, stale); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRecoverArgsRejectUnknownAndMissingChoice(t *testing.T) {
 	if _, _, _, err := parseRecoverArgs(nil); err == nil || !strings.Contains(err.Error(), "definition id is required") {
 		t.Fatalf("empty: %v", err)
 	}
-	if _, _, _, err := parseRecoverArgs([]string{"def-a"}); err == nil || !strings.Contains(err.Error(), "exactly one") {
+	if _, err := space.Recover(context.Background(), "def-a", "", false); err == nil || !strings.Contains(err.Error(), "exactly one") {
 		t.Fatalf("missing choice: %v", err)
 	}
-	if _, _, _, err := parseRecoverArgs([]string{"def-a", "--create", "--workspace", "w1"}); err == nil || !strings.Contains(err.Error(), "exactly one") {
+	if _, err := space.Recover(context.Background(), "def-a", "w1", true); err == nil || !strings.Contains(err.Error(), "exactly one") {
 		t.Fatalf("both: %v", err)
 	}
 	if _, _, _, err := parseRecoverArgs([]string{"def-a", "--create", "extra"}); err == nil || !strings.Contains(err.Error(), "unknown argument extra") {
@@ -58,19 +73,11 @@ func TestCompiledRecoverKeepsSiblingUnresolvedAfterFreshInvocation(t *testing.T)
 	config := t.TempDir()
 	hsehtest.WriteDefinition(t, config, "def-a", "alpha", dirA, "echo A")
 	hsehtest.WriteDefinition(t, config, "def-b", "beta", dirB, "echo B")
-	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{Version: "0.9.0"}}
+	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{}}
 	socket, state := hsehtest.Start(t, h)
-	useHsehTestSession(t, state)
-	stale := space.AssociationState{
-		Witness: herdr.ContinuityWitness{SocketPath: socket, PeerPID: 999999, PeerStartTime: "1", BootTime: "1"},
-		Records: []space.AssociationRecord{
-			{DefinitionID: "def-a", ResolvedDir: dirA, WorkspaceID: "w9"},
-			{DefinitionID: "def-b", ResolvedDir: dirB, WorkspaceID: "w8"},
-		},
-	}
-	if err := space.WriteAssociationFile(state, stale); err != nil {
-		t.Fatal(err)
-	}
+	seedStaleAssociation(t, socket, state, 999999,
+		space.AssociationRecord{DefinitionID: "def-a", ResolvedDir: dirA, WorkspaceID: "w9"},
+		space.AssociationRecord{DefinitionID: "def-b", ResolvedDir: dirB, WorkspaceID: "w8"})
 	env := hsehtest.Env(socket, state, config)
 	out, err := runCompiledHseh(env, "open", "def-a")
 	if err == nil || !strings.Contains(out, "needs recovery") {
@@ -104,19 +111,11 @@ func TestCompiledRecoverRepeatGenerationKeepsUnresolvedSiblings(t *testing.T) {
 	config := t.TempDir()
 	hsehtest.WriteDefinition(t, config, "def-a", "alpha", dirA, "echo A")
 	hsehtest.WriteDefinition(t, config, "def-b", "beta", dirB, "echo B")
-	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{Version: "0.9.0"}}
+	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{}}
 	socket, state := hsehtest.Start(t, h)
-	useHsehTestSession(t, state)
-	stale := space.AssociationState{
-		Witness: herdr.ContinuityWitness{SocketPath: socket, PeerPID: 1, PeerStartTime: "1", BootTime: "1"},
-		Records: []space.AssociationRecord{
-			{DefinitionID: "def-a", ResolvedDir: dirA, WorkspaceID: "w9"},
-			{DefinitionID: "def-b", ResolvedDir: dirB, WorkspaceID: "w8"},
-		},
-	}
-	if err := space.WriteAssociationFile(state, stale); err != nil {
-		t.Fatal(err)
-	}
+	seedStaleAssociation(t, socket, state, 1,
+		space.AssociationRecord{DefinitionID: "def-a", ResolvedDir: dirA, WorkspaceID: "w9"},
+		space.AssociationRecord{DefinitionID: "def-b", ResolvedDir: dirB, WorkspaceID: "w8"})
 	env := hsehtest.Env(socket, state, config)
 	if out, err := runCompiledHseh(env, "recover", "def-a", "--create"); err != nil {
 		t.Fatalf("first recover: %v %s", err, out)
@@ -161,7 +160,6 @@ func TestCompiledRecoverRefusesStolenCurrentAssociation(t *testing.T) {
 	hsehtest.WriteDefinition(t, config, "def-b", "beta", dirB, "echo B")
 	mix := t.TempDir()
 	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{
-		Version:    "0.9.0",
 		Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w-mix", Label: "mixed", ActiveTabID: "w-mix:t1"}},
 		Panes: []herdr.PaneRow{
 			{PaneID: "w-mix:p1", WorkspaceID: "w-mix", Cwd: mix},
@@ -205,16 +203,9 @@ func TestCompiledRecoverInvalidWorkspaceDoesNotMutate(t *testing.T) {
 	dirA := t.TempDir()
 	config := t.TempDir()
 	hsehtest.WriteDefinition(t, config, "def-a", "alpha", dirA, "echo A")
-	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{Version: "0.9.0"}}
+	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{}}
 	socket, state := hsehtest.Start(t, h)
-	useHsehTestSession(t, state)
-	stale := space.AssociationState{
-		Witness: herdr.ContinuityWitness{SocketPath: socket, PeerPID: 9, PeerStartTime: "1"},
-		Records: []space.AssociationRecord{{DefinitionID: "def-a", ResolvedDir: dirA, WorkspaceID: "w9"}},
-	}
-	if err := space.WriteAssociationFile(state, stale); err != nil {
-		t.Fatal(err)
-	}
+	seedStaleAssociation(t, socket, state, 9, space.AssociationRecord{DefinitionID: "def-a", ResolvedDir: dirA, WorkspaceID: "w9"})
 	env := hsehtest.Env(socket, state, config)
 	out, err := runCompiledHseh(env, "recover", "def-a", "--workspace", "w-missing")
 	if err == nil || !strings.Contains(out, "is not live") {
@@ -235,16 +226,9 @@ func TestCompiledRecoverCreatePartialThenRepeatFocuses(t *testing.T) {
 	hsehtest.WriteDefinitionTOML(t, config, "partial", "id = \"def-partial\"\nname = \"partial\"\nworking_dir = \""+work+"\"\n"+
 		"[[tabs]]\nname = \"root\"\ncommand = \"echo FIRST\"\n"+
 		"[[tabs]]\nname = \"web\"\nworking_dir = \"web\"\ncommand = \"echo SECOND\"\n")
-	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{Version: "0.9.0"}, FailMethod: "tab.create"}
+	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{}, FailMethod: "tab.create"}
 	socket, state := hsehtest.Start(t, h)
-	useHsehTestSession(t, state)
-	stale := space.AssociationState{
-		Witness: herdr.ContinuityWitness{SocketPath: socket, PeerPID: 3, PeerStartTime: "1"},
-		Records: []space.AssociationRecord{{DefinitionID: "def-partial", ResolvedDir: work, WorkspaceID: "w9"}},
-	}
-	if err := space.WriteAssociationFile(state, stale); err != nil {
-		t.Fatal(err)
-	}
+	seedStaleAssociation(t, socket, state, 3, space.AssociationRecord{DefinitionID: "def-partial", ResolvedDir: work, WorkspaceID: "w9"})
 	env := hsehtest.Env(socket, state, config)
 	out, err := runCompiledHseh(env, "recover", "def-partial", "--create")
 	if err == nil || !strings.Contains(out, "tab.create") {
@@ -275,7 +259,7 @@ func TestCompiledRecoverCreateIsNotGenericDuplicate(t *testing.T) {
 	work := t.TempDir()
 	config := t.TempDir()
 	hsehtest.WriteDefinition(t, config, "def-new", "fresh", work, "echo NEW")
-	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{Version: "0.9.0"}}
+	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{}}
 	socket, state := hsehtest.Start(t, h)
 	env := hsehtest.Env(socket, state, config)
 	out, err := runCompiledHseh(env, "recover", "def-new", "--create")
@@ -292,29 +276,19 @@ func TestCompiledListShowsRecoveryWhileLiveItemsRemain(t *testing.T) {
 	config := t.TempDir()
 	hsehtest.WriteDefinition(t, config, "def-a", "alpha", dirA, "echo A")
 	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{
-		Version:    "0.9.0",
 		Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w1", Label: "live", ActiveTabID: "w1:t1"}},
 		Tabs:       []herdr.TabRow{{TabID: "w1:t1", Label: "live"}},
 		Panes:      []herdr.PaneRow{{PaneID: "w1:p1", WorkspaceID: "w1", TabID: "w1:t1", Cwd: dirA}},
 	}}
 	socket, state := hsehtest.Start(t, h)
-	useHsehTestSession(t, state)
-	stale := space.AssociationState{
-		Witness: herdr.ContinuityWitness{SocketPath: socket, PeerPID: 8, PeerStartTime: "1"},
-		Records: []space.AssociationRecord{{DefinitionID: "def-a", ResolvedDir: dirA, WorkspaceID: "w1"}},
-	}
-	if err := space.WriteAssociationFile(state, stale); err != nil {
-		t.Fatal(err)
-	}
+	seedStaleAssociation(t, socket, state, 8, space.AssociationRecord{DefinitionID: "def-a", ResolvedDir: dirA, WorkspaceID: "w1"})
 	env := hsehtest.Env(socket, state, config)
 	out, err := runCompiledHseh(env, "list", "--json")
 	if err != nil {
 		t.Fatalf("list: %v %s", err, out)
 	}
-	if !strings.Contains(out, `"kind":"space"`) && !strings.Contains(out, `"kind": "space"`) {
-		if !strings.Contains(out, "live") {
-			t.Fatalf("live item missing: %s", out)
-		}
+	if !strings.Contains(out, `"kind": "space"`) {
+		t.Fatalf("live item missing: %s", out)
 	}
 	if !strings.Contains(out, "recovery needed") || !strings.Contains(out, "hseh recover def-a --create") {
 		t.Fatalf("recovery missing: %s", out)
@@ -326,16 +300,9 @@ func TestCompiledOpenUnrelatedDefinitionStillWorksAfterRestart(t *testing.T) {
 	config := t.TempDir()
 	hsehtest.WriteDefinition(t, config, "def-a", "alpha", dirA, "echo A")
 	hsehtest.WriteDefinition(t, config, "def-b", "beta", dirB, "echo B")
-	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{Version: "0.9.0"}}
+	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{}}
 	socket, state := hsehtest.Start(t, h)
-	useHsehTestSession(t, state)
-	stale := space.AssociationState{
-		Witness: herdr.ContinuityWitness{SocketPath: socket, PeerPID: 4, PeerStartTime: "1"},
-		Records: []space.AssociationRecord{{DefinitionID: "def-a", ResolvedDir: dirA, WorkspaceID: "w9"}},
-	}
-	if err := space.WriteAssociationFile(state, stale); err != nil {
-		t.Fatal(err)
-	}
+	seedStaleAssociation(t, socket, state, 4, space.AssociationRecord{DefinitionID: "def-a", ResolvedDir: dirA, WorkspaceID: "w9"})
 	env := hsehtest.Env(socket, state, config)
 	out, err := runCompiledHseh(env, "open", "def-b")
 	if err != nil {

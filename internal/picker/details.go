@@ -16,7 +16,7 @@ func statePrefix(status, mode string) (plain, display string) {
 		return "", ""
 	}
 	icon := stateIconGlyph(status, mode)
-	return icon + " ", stylePlainToken(SidebarToken{Name: "state_icon"}, icon, status) + " "
+	return icon + " ", stylePlainToken(sidebarToken{Name: "state_icon"}, icon, status) + " "
 }
 
 func agentHarnessIcon(agent string) string {

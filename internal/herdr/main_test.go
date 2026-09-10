@@ -1,18 +1,9 @@
-package herdr
+package herdr_test
 
 import (
-	"os"
 	"testing"
+
+	"github.com/regutierrez/hseh/internal/hsehtest"
 )
 
-// hsehtest imports herdr, so this package isolates its own config dir (see hsehtest.Main).
-func TestMain(m *testing.M) {
-	dir, err := os.MkdirTemp("", "hseh-test-config-")
-	if err != nil {
-		panic(err)
-	}
-	os.Setenv("HERDR_PLUGIN_CONFIG_DIR", dir)
-	code := m.Run()
-	os.RemoveAll(dir)
-	os.Exit(code)
-}
+func TestMain(m *testing.M) { hsehtest.Main(m) }

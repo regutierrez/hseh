@@ -1,6 +1,7 @@
 package focus
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/regutierrez/hseh/internal/config"
@@ -12,7 +13,7 @@ func ApplyPluginEvent(name string, data herdr.PluginEventData) error {
 	paneID := herdr.PluginEventPaneID(data)
 	stateDir := config.StateDir()
 	return withLock(stateDir, func() error {
-		snapshot, witness, err := herdr.LoadSessionSnapshot()
+		snapshot, witness, err := herdr.LoadSessionSnapshotContext(context.Background())
 		if err != nil {
 			return err
 		}

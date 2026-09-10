@@ -20,7 +20,7 @@ func runPluginEvent() error {
 }
 
 func runWorkspaceSwitch() error {
-	snapshot, witness, err := herdr.LoadSessionSnapshot()
+	snapshot, witness, err := herdr.LoadSessionSnapshotContext(context.Background())
 	if err != nil {
 		return err
 	}

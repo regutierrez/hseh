@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/regutierrez/hseh/internal/trace"
 )
 
 func readContinuityWitnessFromUnixConn(unixConn *net.UnixConn) (ContinuityWitness, error) {
@@ -29,9 +30,9 @@ func readContinuityWitnessFromUnixConn(unixConn *net.UnixConn) (ContinuityWitnes
 	if cred == nil || cred.Pid <= 0 {
 		return ContinuityWitness{}, fmt.Errorf("hseh history: continuity witness missing peer pid")
 	}
-	startTime, err := readProcStartTime(int(cred.Pid))
+	startTime, err := trace.ProcStartTicks(int(cred.Pid))
 	if err != nil {
-		return ContinuityWitness{}, err
+		return ContinuityWitness{}, fmt.Errorf("hseh history: continuity witness: %w", err)
 	}
 	bootTime, err := readProcBootTime()
 	if err != nil {
@@ -42,23 +43,6 @@ func readContinuityWitnessFromUnixConn(unixConn *net.UnixConn) (ContinuityWitnes
 		PeerStartTime: startTime,
 		BootTime:      bootTime,
 	}, nil
-}
-
-func readProcStartTime(pid int) (string, error) {
-	payload, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/stat")
-	if err != nil {
-		return "", fmt.Errorf("hseh history: continuity witness /proc/%d/stat: %w", pid, err)
-	}
-	text := string(payload)
-	closeParen := strings.LastIndex(text, ")")
-	if closeParen < 0 || closeParen+2 >= len(text) {
-		return "", fmt.Errorf("hseh history: continuity witness /proc/%d/stat missing comm", pid)
-	}
-	fields := strings.Fields(text[closeParen+2:])
-	if len(fields) < 20 {
-		return "", fmt.Errorf("hseh history: continuity witness /proc/%d/stat too short", pid)
-	}
-	return fields[19], nil
 }
 
 func readProcBootTime() (string, error) {

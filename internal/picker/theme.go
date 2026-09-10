@@ -8,7 +8,7 @@ import (
 )
 
 // colorTheme holds SGR prefixes for picker chrome, resolved from Herdr's
-// [theme] configuration. Sidebar row content keeps following SidebarLayout.
+// [theme] configuration. Sidebar row content keeps following sidebarLayout.
 type colorTheme struct {
 	Name      string
 	Accent    string // borders, rail, divider
@@ -71,9 +71,9 @@ type herdrThemeFile struct {
 
 // loadTheme resolves the picker chrome palette from Herdr's config.
 // Missing or unparsable config falls back to Herdr's default palette.
-func loadTheme(configPath string) (colorTheme, []string) {
+func loadTheme() (colorTheme, []string) {
 	var file herdrThemeFile
-	if errs := readHerdrConfig(configPath, "theme", &file); errs != nil {
+	if errs := readHerdrConfig("", "theme", &file); errs != nil {
 		return resolveTheme("", nil), errs
 	}
 	return resolveTheme(file.Theme.Name, file.Theme.Custom), nil
@@ -133,10 +133,6 @@ func terminalTheme() colorTheme {
 	}
 }
 
-func defaultTheme() colorTheme {
-	return resolveTheme(defaultHerdrThemeName, nil)
-}
-
 func hexSGR(hex string, background bool) string {
 	hex = strings.TrimPrefix(hex, "#")
 	if len(hex) == 3 {
@@ -157,10 +153,9 @@ func hexSGR(hex string, background bool) string {
 	return fmt.Sprintf("\x1b[%s;2;%d;%d;%dm", plane, r, g, b)
 }
 
-// th returns the model theme, defaulting to Herdr's default palette for zero-value models.
 func (m model) th() colorTheme {
 	if m.theme.Name == "" {
-		return defaultTheme()
+		return resolveTheme(defaultHerdrThemeName, nil)
 	}
 	return m.theme
 }

@@ -32,11 +32,11 @@ func TestGitUsesOnlyActivePaneDirectoryAndLinkedWorktree(t *testing.T) {
 		Layouts:    []herdr.PaneLayout{{TabID: "w1:t1", FocusedPaneID: "w1:p2"}},
 		Panes:      []herdr.PaneRow{{PaneID: "w1:p1", Cwd: repo}, {PaneID: "w1:p2", Cwd: repo, ForegroundCwd: worktree}},
 	}
-	got := LoadGit(context.Background(), snapshot, nil)
+	got := loadGit(context.Background(), snapshot, nil)
 	if len(got) != 1 || got[worktree].Branch != "feature" {
 		t.Fatalf("not active worktree: %+v", got)
 	}
-	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), 0, 100)
+	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), 100)
 	m.gitByDirectory = got
 	if !strings.Contains(m.catalogItems()[0].SearchText, "feature") {
 		t.Fatal("worktree branch missing")
@@ -63,7 +63,7 @@ func TestGitRefreshDoesNotOverlapAndCancelsOnExit(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if got := LoadGit(ctx, herdr.SessionSnapshot{}, nil); len(got) != 0 {
+	if got := loadGit(ctx, herdr.SessionSnapshot{}, nil); len(got) != 0 {
 		t.Fatal(got)
 	}
 }

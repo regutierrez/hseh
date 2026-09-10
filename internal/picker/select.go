@@ -7,14 +7,14 @@ import (
 	"github.com/regutierrez/hseh/internal/herdr"
 )
 
-// LaunchContext names the targets focused when the popup opened, so preselection can skip them.
-type LaunchContext struct {
+// launchContext names the targets focused when the popup opened, so preselection can skip them.
+type launchContext struct {
 	CurrentSpace string
 	CurrentAgent string
 }
 
-func launchFromSnapshot(snapshot herdr.SessionSnapshot, history focus.History) LaunchContext {
-	ctx := LaunchContext{CurrentSpace: snapshot.FocusedWorkspaceID}
+func launchFromSnapshot(snapshot herdr.SessionSnapshot, history focus.History) launchContext {
+	ctx := launchContext{CurrentSpace: snapshot.FocusedWorkspaceID}
 	if snapshot.FocusedPaneID != "" {
 		if id, ok := focus.CurrentAgentLiveID(history, snapshot.FocusedPaneID); ok {
 			ctx.CurrentAgent = id.String()
@@ -23,13 +23,18 @@ func launchFromSnapshot(snapshot herdr.SessionSnapshot, history focus.History) L
 	return ctx
 }
 
-// PreselectItemID chooses the previous target, then first non-current, then current.
-func PreselectItemID(view string, items []Item, history focus.History, launch LaunchContext) string {
+// preselectItemID chooses the previous target, then first non-current, then current.
+func preselectItemID(view string, items []Item, history focus.History, launch launchContext) string {
 	if len(items) == 0 {
 		return ""
 	}
-	wanted := previousTargetID(view, items, history, launch)
-	if wanted != "" && HasItemID(items, wanted) {
+	var wanted string
+	if view == ViewAgents {
+		wanted = previousAgentID(history, launch.CurrentAgent, items)
+	} else {
+		wanted = previousSpaceID(history, launch.CurrentSpace, items)
+	}
+	if wanted != "" && hasItemID(items, wanted) {
 		return wanted
 	}
 	for _, item := range items {
@@ -40,26 +45,9 @@ func PreselectItemID(view string, items []Item, history focus.History, launch La
 	return items[0].ID
 }
 
-func previousTargetID(view string, items []Item, history focus.History, launch LaunchContext) string {
-	switch view {
-	case ViewAgents:
-		return previousAgentID(history, launch.CurrentAgent, items)
-	default:
-		return previousSpaceID(history, launch.CurrentSpace, items)
-	}
-}
-
+// itemTarget is the live agent ID behind an agent row; callers must check Kind == KindAgent.
 func itemTarget(item Item) string {
-	switch item.Kind {
-	case KindSpace:
-		return item.WorkspaceID
-	case KindDefinition:
-		return item.DefinitionID
-	case KindAgent:
-		return strings.TrimPrefix(item.ID, KindAgent+":")
-	default:
-		return item.ID
-	}
+	return strings.TrimPrefix(item.ID, KindAgent+":")
 }
 
 func previousSpaceID(history focus.History, current string, items []Item) string {
@@ -91,7 +79,7 @@ func previousAgentID(history focus.History, current string, items []Item) string
 	return ""
 }
 
-func isCurrentItem(item Item, launch LaunchContext) bool {
+func isCurrentItem(item Item, launch launchContext) bool {
 	switch item.Kind {
 	case KindSpace:
 		return item.WorkspaceID == launch.CurrentSpace
@@ -102,7 +90,7 @@ func isCurrentItem(item Item, launch LaunchContext) bool {
 	}
 }
 
-func HasItemID(items []Item, id string) bool {
+func hasItemID(items []Item, id string) bool {
 	for _, item := range items {
 		if item.ID == id {
 			return true

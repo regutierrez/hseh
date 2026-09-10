@@ -18,7 +18,7 @@ func TestQueryRetainedAcrossViewsAndClearedOnRebuild(t *testing.T) {
 		},
 		Agents: []herdr.AgentRow{{PaneRow: herdr.PaneRow{PaneID: "w1:p1", Agent: "pi", DisplayAgent: "beta-bot", AgentStatus: "idle"}}},
 	}
-	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), 0, 80)
+	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), 80)
 	m.query = "beta"
 	m.applyQuery()
 	if len(m.visible) != 1 || m.visible[0].WorkspaceID != "w2" {
@@ -42,14 +42,14 @@ func TestQueryRetainedAcrossViewsAndClearedOnRebuild(t *testing.T) {
 }
 
 func TestNarrowStopsPreviewReadsAndWideResumes(t *testing.T) {
-	snapshot := herdr.SessionSnapshot{Version: "0.9.0", Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w2", Label: "beta", ActiveTabID: "w2:t1"}}, Layouts: []herdr.PaneLayout{{TabID: "w2:t1", FocusedPaneID: "w2:p1"}}}
+	snapshot := herdr.SessionSnapshot{Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w2", Label: "beta", ActiveTabID: "w2:t1"}}, Layouts: []herdr.PaneLayout{{TabID: "w2:t1", FocusedPaneID: "w2:p1"}}}
 	srv := &hsehtest.Server{Snapshot: snapshot, PaneReadText: "tick"}
 	socket, state := hsehtest.Start(t, srv)
 	reads := &srv.Reads
 	t.Setenv("HERDR_SOCKET_PATH", socket)
 	t.Setenv("HERDR_PLUGIN_STATE_DIR", state)
 	t.Setenv("HERDR_SESSION", "hseh-test")
-	m := model{widePreviewMinCols: 40, previewLoadingDelay: time.Millisecond, snapshotReady: true, selectedID: "w2", visible: []Item{{Kind: KindAgent, ID: "w2", PreviewPane: "w2:p1"}}}
+	m := model{widePreviewMinCols: 40, previewLoadingDelay: time.Millisecond, snapshotReady: true, selectedID: "w2", visible: []Item{{Kind: KindAgent, ID: "w2", PaneID: "w2:p1"}}}
 	next, cmd := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	got := next.(model)
 	if cmd == nil {
@@ -87,7 +87,6 @@ func TestNarrowStopsPreviewReadsAndWideResumes(t *testing.T) {
 
 func TestEnterFocusesSelectedWorkspace(t *testing.T) {
 	snapshot := herdr.SessionSnapshot{
-		Version:            "0.9.0",
 		FocusedWorkspaceID: "w1",
 		Workspaces: []herdr.WorkspaceRow{
 			{WorkspaceID: "w1", Label: "alpha", ActiveTabID: "w1:t1"},
@@ -99,8 +98,8 @@ func TestEnterFocusesSelectedWorkspace(t *testing.T) {
 	focused := &srv.Focused
 	t.Setenv("HERDR_SOCKET_PATH", socket)
 	t.Setenv("HERDR_PLUGIN_STATE_DIR", state)
-	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{SocketPath: socket, PeerPID: 1, PeerStartTime: "1"}), defaultSidebarLayout(), 0, 80)
-	m.selectedID = SelectionID(KindSpace, "w2")
+	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{SocketPath: socket, PeerPID: 1, PeerStartTime: "1"}), 80)
+	m.selectedID = selectionID(KindSpace, "w2")
 	cmd := m.startAccept()
 	if cmd == nil {
 		t.Fatal("expected accept")

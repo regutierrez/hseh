@@ -83,7 +83,7 @@ func TestListingPreviewStartsAtTop(t *testing.T) {
 }
 
 func TestViewTabsTrackKeyboardCycle(t *testing.T) {
-	m := newModel("spaces", herdr.SessionSnapshot{}, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), 0, 100)
+	m := newModel("spaces", herdr.SessionSnapshot{}, focus.EmptyHistory(herdr.ContinuityWitness{}), 100)
 	m.width, m.height = 100, 8
 	for _, want := range []string{"Spaces", "Agents", "Spaces"} {
 		got := m.View()

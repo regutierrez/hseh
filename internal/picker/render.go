@@ -61,12 +61,12 @@ const (
 // frameSpec is the resolved screen geometry for one size. Every renderer and the
 // mouse hit-tester read from it so they cannot disagree.
 type frameSpec struct {
-	mode                                   previewMode
-	listY, listW, listH                    int
-	searchY, searchW, searchH              int
-	dividerX                               int
-	previewX, previewY, previewW, previewH int
-	footerY                                int
+	mode                         previewMode
+	listY, listW, listH          int
+	searchY, searchW, searchH    int
+	dividerX                     int
+	previewY, previewW, previewH int
+	footerY                      int
 }
 
 func (m model) frame() frameSpec {
@@ -100,7 +100,6 @@ func (m model) frame() frameSpec {
 		f.listW = listW
 		f.searchW = listW
 		f.dividerX = listW
-		f.previewX = listW + 1
 		f.previewW = width - listW - 1
 		f.previewY = tabRows
 		f.previewH = rest
@@ -114,7 +113,6 @@ func (m model) frame() frameSpec {
 			f.mode = previewStacked
 			f.listH = listH
 			f.searchY = tabRows + listH
-			f.previewX = 0
 			f.previewY = f.searchY + search + 1 // one rule row between search box and preview
 			f.previewW = width
 			f.previewH = previewH
@@ -123,7 +121,6 @@ func (m model) frame() frameSpec {
 	return f
 }
 
-// splitListBounds clamps the side-by-side list width so both panes keep a readable minimum.
 func (m model) splitListBounds() (lo, hi int) {
 	width := max(1, m.width)
 	lo = minListWidth
@@ -151,17 +148,7 @@ func (m model) renderTabs() string {
 	return padDisplayWidth(strings.Join(tabs, " "), m.width) + "\x1b[0m"
 }
 
-// renderSearch draws the rounded search box: Search title, prompt, caret, and matched/total count.
-func (m model) renderSearch(width, height int) string {
-	if height < 1 {
-		return ""
-	}
-	if width < 1 {
-		width = 1
-	}
-	return strings.Join(m.searchBoxLines(width, height), "\n")
-}
-
+// searchBoxLines draws the rounded search box: Search title, prompt, caret, and matched/total count.
 func (m model) searchBoxLines(width, height int) []string {
 	th := m.th()
 	minInput := ansi.StringWidth(searchPrompt) + 2 // prompt, space, caret
@@ -211,7 +198,7 @@ func (m model) searchBoxLines(width, height int) []string {
 func searchHorizontalBorder(color, left, right string, inner int, title string, width int) string {
 	var b strings.Builder
 	b.WriteString(left)
-	if title != "" && inner >= ansi.StringWidth(title) {
+	if title != "" {
 		rest := inner - ansi.StringWidth(title)
 		leftPad := rest / 2
 		b.WriteString(strings.Repeat("─", leftPad))
@@ -295,11 +282,7 @@ func clipSearchTail(s string, width int) string {
 	for start < len(runes) && ansi.StringWidth(string(runes[start:])) > width {
 		start++
 	}
-	clipped := string(runes[start:])
-	if ansi.StringWidth(clipped) > width {
-		return ""
-	}
-	return clipped
+	return string(runes[start:])
 }
 
 // renderFooter shows key help, plus a status. Errors are primary and win over help when
@@ -320,23 +303,19 @@ func (m model) renderFooter(width int) string {
 		}
 		return padDisplayWidth(th.Red+ansi.Truncate(errText, width, "…")+"\x1b[0m", width)
 	}
-	status := m.secondaryStatus()
+	status := ""
+	switch {
+	case !m.snapshotReady:
+		status = "Loading Herdr session…"
+	case !m.catalogReady:
+		status = "Loading definitions…"
+	}
 	statusW := ansi.StringWidth(status)
 	if status != "" && statusW+2+helpW <= width {
 		gap := width - statusW - helpW
 		return padDisplayWidth(th.Muted+status+"\x1b[0m"+strings.Repeat(" ", gap)+th.Muted+help+"\x1b[0m", width)
 	}
 	return padDisplayWidth(th.Muted+ansi.Truncate(help, width, "…")+"\x1b[0m", width)
-}
-
-func (m model) secondaryStatus() string {
-	switch {
-	case !m.snapshotReady:
-		return "Loading Herdr session…"
-	case !m.catalogReady:
-		return "Loading definitions…"
-	}
-	return ""
 }
 
 func (m model) View() string {
@@ -357,7 +336,6 @@ func (m model) renderView() (out string) {
 		return tabs
 	}
 	th := m.th()
-	search := m.renderSearch(f.searchW, f.searchH)
 	var lines []string
 	lines = append(lines, tabs)
 	switch f.mode {
@@ -367,7 +345,7 @@ func (m model) renderView() (out string) {
 			listLines = m.buildListLayout(f.listW, f.listH).Lines
 		}
 		if f.searchH > 0 {
-			searchLines = strings.Split(search, "\n")
+			searchLines = m.searchBoxLines(f.searchW, f.searchH)
 		}
 		prevLines = strings.Split(m.renderPreview(f.previewW, f.previewH), "\n")
 		for i := 0; i < f.previewH; i++ {
@@ -389,7 +367,7 @@ func (m model) renderView() (out string) {
 			lines = append(lines, m.buildListLayout(f.listW, f.listH).Lines...)
 		}
 		if f.searchH > 0 {
-			lines = append(lines, strings.Split(search, "\n")...)
+			lines = append(lines, m.searchBoxLines(f.searchW, f.searchH)...)
 		}
 		if f.mode == previewStacked {
 			lines = append(lines, padDisplayWidth(th.Overlay+strings.Repeat("─", f.previewW)+"\x1b[0m", f.previewW))
@@ -538,7 +516,7 @@ func (m model) buildListLayout(width, height int) listLayout {
 	th := m.th()
 	n := len(m.visible)
 	if n == 0 {
-		lines := padToHeight(nil, height)
+		lines := make([]string, height)
 		ids := make([]string, height)
 		lines[height-1] = padDisplayWidth(strings.Repeat(" ", railWidth)+m.emptyListCopy(), width) + "\x1b[0m"
 		for i := 0; i < height-1; i++ {
@@ -859,12 +837,6 @@ func clipBlock(text string, width, height int) string {
 		if len(lines) >= height {
 			break
 		}
-	}
-	for i, line := range lines {
-		if i >= height {
-			break
-		}
-		lines[i] = padDisplayWidth(line, width)
 	}
 	return joinPaddedRows(lines, width, height)
 }

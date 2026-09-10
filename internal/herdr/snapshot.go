@@ -15,13 +15,12 @@ type AgentSession struct {
 
 // WorkspaceRow is one live workspace from session.snapshot.
 type WorkspaceRow struct {
-	WorkspaceID string            `json:"workspace_id"`
-	Label       string            `json:"label"`
-	Focused     bool              `json:"focused"`
-	ActiveTabID string            `json:"active_tab_id"`
-	AgentStatus string            `json:"agent_status"`
-	Tokens      map[string]string `json:"tokens"`
-	Worktree    *Worktree         `json:"worktree"`
+	WorkspaceID string    `json:"workspace_id"`
+	Label       string    `json:"label"`
+	Focused     bool      `json:"focused"`
+	ActiveTabID string    `json:"active_tab_id"`
+	AgentStatus string    `json:"agent_status"`
+	Worktree    *Worktree `json:"worktree"`
 }
 
 // Worktree is optional Git checkout provenance on a workspace.
@@ -31,9 +30,8 @@ type Worktree struct {
 
 // TabRow is one live tab from session.snapshot.
 type TabRow struct {
-	TabID       string `json:"tab_id"`
-	Label       string `json:"label"`
-	AgentStatus string `json:"agent_status"`
+	TabID string `json:"tab_id"`
+	Label string `json:"label"`
 }
 
 // PaneRow is one live pane from session.snapshot.
@@ -41,7 +39,6 @@ type PaneRow struct {
 	PaneID        string            `json:"pane_id"`
 	WorkspaceID   string            `json:"workspace_id"`
 	TabID         string            `json:"tab_id"`
-	Focused       bool              `json:"focused"`
 	Cwd           string            `json:"cwd"`
 	ForegroundCwd string            `json:"foreground_cwd"`
 	Label         string            `json:"label"`
@@ -54,26 +51,22 @@ type PaneRow struct {
 	StateLabels   map[string]string `json:"state_labels"`
 	Tokens        map[string]string `json:"tokens"`
 	AgentSession  *AgentSession     `json:"agent_session"`
-	Revision      uint64            `json:"revision"`
 }
 
 // AgentRow is one live agent from session.snapshot.
 type AgentRow struct {
 	PaneRow
-	Name           string `json:"name"`
 	StateChangeSeq uint64 `json:"state_change_seq"`
 }
 
 // PaneLayout is the active-pane map for one tab.
 type PaneLayout struct {
-	WorkspaceID   string `json:"workspace_id"`
 	TabID         string `json:"tab_id"`
 	FocusedPaneID string `json:"focused_pane_id"`
 }
 
 // SessionSnapshot is the live session.snapshot body.
 type SessionSnapshot struct {
-	Version            string         `json:"version"`
 	FocusedWorkspaceID string         `json:"focused_workspace_id"`
 	FocusedPaneID      string         `json:"focused_pane_id"`
 	Workspaces         []WorkspaceRow `json:"workspaces"`
@@ -88,14 +81,10 @@ type SnapshotEnvelope struct {
 	Snapshot *SessionSnapshot `json:"snapshot"`
 }
 
-// LoadSessionSnapshot loads session.snapshot.
-func LoadSessionSnapshot() (SessionSnapshot, ContinuityWitness, error) {
-	return LoadSessionSnapshotContext(context.Background())
-}
-
+// LoadSessionSnapshotContext loads session.snapshot.
 func LoadSessionSnapshotContext(ctx context.Context) (SessionSnapshot, ContinuityWitness, error) {
 	var envelope SnapshotEnvelope
-	witness, err := CallContext(ctx, "session.snapshot", map[string]any{}, &envelope)
+	witness, err := callContext(ctx, "session.snapshot", map[string]any{}, &envelope)
 	if err != nil {
 		return SessionSnapshot{}, witness, err
 	}
@@ -107,7 +96,7 @@ func LoadSessionSnapshotContext(ctx context.Context) (SessionSnapshot, Continuit
 
 // FocusWorkspaceContext focuses a live workspace.
 func FocusWorkspaceContext(ctx context.Context, workspaceID string) error {
-	_, err := CallContext(ctx, "workspace.focus", map[string]any{"workspace_id": workspaceID}, nil)
+	_, err := callContext(ctx, "workspace.focus", map[string]any{"workspace_id": workspaceID}, nil)
 	return err
 }
 
@@ -119,14 +108,14 @@ type AgentFocusEnvelope struct {
 // FocusAgentContext focuses a live agent pane, then syncs the hosted tab from the returned agent_info.
 func FocusAgentContext(ctx context.Context, paneID string) error {
 	var envelope AgentFocusEnvelope
-	_, err := CallContext(ctx, "agent.focus", map[string]any{"target": paneID}, &envelope)
+	_, err := callContext(ctx, "agent.focus", map[string]any{"target": paneID}, &envelope)
 	if err != nil {
 		return err
 	}
 	if envelope.Agent == nil || envelope.Agent.TabID == "" {
 		return fmt.Errorf("hseh focus: agent.focus missing tab_id")
 	}
-	_, err = CallContext(ctx, "tab.focus", map[string]any{"tab_id": envelope.Agent.TabID}, nil)
+	_, err = callContext(ctx, "tab.focus", map[string]any{"tab_id": envelope.Agent.TabID}, nil)
 	return err
 }
 
@@ -150,7 +139,7 @@ func ReadPaneVisibleANSIContext(ctx context.Context, paneID string) (PaneReadRes
 		"format":     "ansi",
 		"strip_ansi": false,
 	}
-	witness, err := CallContext(ctx, "pane.read", params, &envelope)
+	witness, err := callContext(ctx, "pane.read", params, &envelope)
 	if err != nil {
 		return PaneReadResult{}, witness, err
 	}
@@ -171,7 +160,7 @@ func OpenPluginPopup(view string) error {
 	pluginID := config.PluginID()
 	settings, _ := config.Load()
 	var envelope pluginPaneOpenEnvelope
-	_, err := CallContext(WithHedge(context.Background()), "plugin.pane.open", map[string]any{
+	_, err := callContext(WithHedge(context.Background()), "plugin.pane.open", map[string]any{
 		"plugin_id":  pluginID,
 		"entrypoint": view,
 		"placement":  "popup",

@@ -23,8 +23,8 @@ func twoPaneModel() model {
 		previewLoadingDelay: 20 * time.Millisecond,
 		selectedID:          "a",
 		visible: []Item{
-			{Kind: KindAgent, ID: "a", PreviewPane: "pa", Rows: []string{"alpha"}},
-			{Kind: KindAgent, ID: "b", PreviewPane: "pb", Rows: []string{"beta"}},
+			{Kind: KindAgent, ID: "a", PaneID: "pa", Rows: []string{"alpha"}},
+			{Kind: KindAgent, ID: "b", PaneID: "pb", Rows: []string{"beta"}},
 		},
 	}
 }
@@ -165,7 +165,7 @@ func TestFirstSnapshotPreselectsAndStartsPreview(t *testing.T) {
 		Panes:   []herdr.PaneRow{{PaneID: "w1:p1", Cwd: "/tmp/alpha"}, {PaneID: "w2:p1", Cwd: "/tmp/beta"}},
 	}})
 	got := next.(model)
-	if !got.snapshotReady || got.selectedID != SelectionID(KindSpace, "w2") {
+	if !got.snapshotReady || got.selectedID != selectionID(KindSpace, "w2") {
 		t.Fatalf("first snapshot did not preselect previous space: %q", got.selectedID)
 	}
 	if cmd == nil || !got.previewInFlight || got.previewDir != "/tmp/beta" {
@@ -364,7 +364,7 @@ func TestDividerDragOnlyWhileDragging(t *testing.T) {
 
 func TestStackedPreviewRendersBelowList(t *testing.T) {
 	m := model{width: 60, height: 24, widePreviewMinCols: 100, snapshotReady: true, catalogReady: true, selectedID: "a",
-		visible: []Item{{Kind: KindAgent, ID: "a", PreviewPane: "pa", Rows: []string{"alpha"}}}, previewText: "PANE-BODY"}
+		visible: []Item{{Kind: KindAgent, ID: "a", PaneID: "pa", Rows: []string{"alpha"}}}, previewText: "PANE-BODY"}
 	f := m.frame()
 	if f.mode != previewStacked {
 		t.Fatalf("mode %d", f.mode)
@@ -390,7 +390,7 @@ func TestStackedPreviewRendersBelowList(t *testing.T) {
 }
 
 func TestViewLinesFillWidth(t *testing.T) {
-	items := []Item{{Kind: KindAgent, ID: "a", Rows: []string{"alpha"}, PreviewPane: "pa"}}
+	items := []Item{{Kind: KindAgent, ID: "a", Rows: []string{"alpha"}, PaneID: "pa"}}
 	models := []model{
 		{width: 110, height: 24, widePreviewMinCols: 100, snapshotReady: true, catalogReady: true, selectedID: "a", visible: items, previewText: "BODY"},
 		{width: 70, height: 24, widePreviewMinCols: 100, snapshotReady: true, catalogReady: true, selectedID: "a", visible: items, previewText: "BODY"},
@@ -448,11 +448,10 @@ func (r *burstPreviewReader) read(ctx context.Context, paneID string) (string, e
 	}
 }
 
-func burstModel(reader *burstPreviewReader) model {
+func burstModel() model {
 	m := model{width: 120, height: 30, widePreviewMinCols: 100, snapshotReady: true, catalogReady: true, previewLoadingDelay: time.Millisecond}
-	m.readPane = reader.read
 	for i := 0; i < 9; i++ {
-		m.visible = append(m.visible, Item{Kind: KindAgent, ID: fmt.Sprintf("i%d", i), PreviewPane: fmt.Sprintf("p%d", i), Rows: []string{fmt.Sprintf("row %d", i)}})
+		m.visible = append(m.visible, Item{Kind: KindAgent, ID: fmt.Sprintf("i%d", i), PaneID: fmt.Sprintf("p%d", i), Rows: []string{fmt.Sprintf("row %d", i)}})
 	}
 	m.selectedID = "i0"
 	return m
@@ -476,7 +475,7 @@ func runPreviewBurst(m model) (model, *burstPreviewReader) {
 }
 
 func TestPreviewBurstCancelsSevenCompletesOne(t *testing.T) {
-	m, reader := runPreviewBurst(burstModel(&burstPreviewReader{}))
+	m, reader := runPreviewBurst(burstModel())
 	if reader.cancelled.Load() != 7 || reader.completed.Load() != 1 {
 		t.Fatalf("cancelled=%d completed=%d", reader.cancelled.Load(), reader.completed.Load())
 	}
@@ -489,7 +488,7 @@ func benchmarkItems(n int) []Item {
 	items := make([]Item, 0, n)
 	for i := 0; i < n; i++ {
 		rows := []string{fmt.Sprintf("● project-%04d  main +%d", i, i%7), fmt.Sprintf("~/code/area-%d/project-%04d", i%13, i), "pi - working on feature branch"}
-		items = append(items, Item{Kind: KindAgent, ID: fmt.Sprintf("agent:w%d", i), Rows: rows, DisplayRows: []string{"\x1b[33m●\x1b[0m \x1b[1m" + rows[0][4:] + "\x1b[0m", mutedSGR + rows[1] + "\x1b[0m", mutedSGR + rows[2] + "\x1b[0m"}, SearchText: strings.Join(rows, " "), PreviewPane: fmt.Sprintf("w%d:p1", i)})
+		items = append(items, Item{Kind: KindAgent, ID: fmt.Sprintf("agent:w%d", i), Rows: rows, DisplayRows: []string{"\x1b[33m●\x1b[0m \x1b[1m" + rows[0][4:] + "\x1b[0m", mutedSGR + rows[1] + "\x1b[0m", mutedSGR + rows[2] + "\x1b[0m"}, SearchText: strings.Join(rows, " "), PaneID: fmt.Sprintf("w%d:p1", i)})
 	}
 	return items
 }
@@ -523,21 +522,6 @@ func BenchmarkRenderVisibleWindow(b *testing.B) {
 	}
 }
 
-func BenchmarkPreviewNavigationBurst(b *testing.B) {
-	base := burstModel(&burstPreviewReader{})
-	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		m := base
-		m.visible = append([]Item{}, base.visible...)
-		m.cancels = &cancelSet{}
-		_, reader := runPreviewBurst(m)
-		if reader.cancelled.Load() != 7 || reader.completed.Load() != 1 {
-			b.Fatalf("cancelled=%d completed=%d", reader.cancelled.Load(), reader.completed.Load())
-		}
-	}
-}
-
 // realisticModel mirrors a live session: a handful of rows, a live preview frame, side-by-side layout.
 func realisticModel() model {
 	m := model{width: 170, height: 40, widePreviewMinCols: 100, snapshotReady: true, catalogReady: true, theme: terminalTheme()}
@@ -548,7 +532,7 @@ func realisticModel() model {
 	for i := 0; i < 38; i++ {
 		frame.WriteString(fmt.Sprintf("\x1b[32m$\x1b[0m line %02d \x1b[1msome output\x1b[0m with text that fills the row nicely\n", i))
 	}
-	m.previewText, m.previewPane = frame.String(), m.visible[3].PreviewPane
+	m.previewText, m.previewPane = frame.String(), m.visible[3].PaneID
 	return m
 }
 

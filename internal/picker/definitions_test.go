@@ -17,12 +17,12 @@ func TestUnopenedDefinitionListedUntilAssociated(t *testing.T) {
 	work := t.TempDir()
 	def := space.Definition{ID: "def-list", Name: "listed", ResolvedDir: work, WorkingDir: work, Description: "desc"}
 	snapshot := herdr.SessionSnapshot{Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w1", Label: "live"}}}
-	items := AppendUnopenedDefinitionItems(BuildItemsWithLayout("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil), "spaces", snapshot, []space.Definition{def}, nil, nil, nil)
+	items := appendUnopenedDefinitionItems(buildItemsWithLayout("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil), "spaces", snapshot, []space.Definition{def}, nil, nil, nil)
 	if len(items) != 2 || items[1].Kind != KindDefinition {
 		t.Fatalf("%+v", items)
 	}
 	records := []space.AssociationRecord{{DefinitionID: "def-list", ResolvedDir: work, WorkspaceID: "w1"}}
-	hidden := AppendUnopenedDefinitionItems(BuildItemsWithLayout("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil), "spaces", snapshot, []space.Definition{def}, records, nil, nil)
+	hidden := appendUnopenedDefinitionItems(buildItemsWithLayout("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil), "spaces", snapshot, []space.Definition{def}, records, nil, nil)
 	if len(hidden) != 1 {
 		t.Fatalf("associated definition still listed: %+v", hidden)
 	}
@@ -50,10 +50,10 @@ func TestDefinitionPickerSanitizesDisplayNotCommand(t *testing.T) {
 
 func TestRepeatedEnterCreatesOnce(t *testing.T) {
 	work := t.TempDir()
-	snapshot := herdr.SessionSnapshot{Version: "0.9.0", Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w0", Label: "other"}}}
-	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), 0, 80)
+	snapshot := herdr.SessionSnapshot{Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w0", Label: "other"}}}
+	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), 80)
 	m.setSpaceCatalog([]space.Definition{{ID: "def-once", Name: "once", ResolvedDir: work, WorkingDir: work, Tabs: []space.DefinitionTab{{Name: "main", Command: "echo X"}}}}, nil, nil, nil)
-	m.selectedID = SelectionID(KindDefinition, "def-once")
+	m.selectedID = selectionID(KindDefinition, "def-once")
 	first := m.startAccept()
 	if first == nil {
 		t.Fatal("first enter")
@@ -68,16 +68,16 @@ func TestPickerEscapeCancelsDefinitionAccept(t *testing.T) {
 	work := t.TempDir()
 	config := t.TempDir()
 	hsehtest.WriteDefinition(t, config, "def-esc", "esc", work, "echo NO")
-	snapshot := herdr.SessionSnapshot{Version: "0.9.0"}
+	snapshot := herdr.SessionSnapshot{}
 	h := &hsehtest.Server{Snapshot: snapshot, SnapshotDelay: 400 * time.Millisecond}
 	socket, state := hsehtest.Start(t, h)
 	t.Setenv("HERDR_SOCKET_PATH", socket)
 	t.Setenv("HERDR_PLUGIN_STATE_DIR", state)
 	t.Setenv("HERDR_PLUGIN_CONFIG_DIR", config)
 	t.Setenv("HERDR_SESSION", "hseh-test")
-	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), 0, 80)
+	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), 80)
 	m.setSpaceCatalog([]space.Definition{{ID: "def-esc", Name: "esc", ResolvedDir: work, WorkingDir: work, Tabs: []space.DefinitionTab{{Name: "main"}}}}, nil, nil, nil)
-	m.selectedID = SelectionID(KindDefinition, "def-esc")
+	m.selectedID = selectionID(KindDefinition, "def-esc")
 	cmd := m.startAccept()
 	done := make(chan tea.Msg, 1)
 	go func() { done <- cmd() }()

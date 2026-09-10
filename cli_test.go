@@ -70,7 +70,6 @@ func seedAgentHistory(t *testing.T, socket, stateDir, sessionValue string) {
 
 func TestCompiledCLIListJSON(t *testing.T) {
 	snapshot := herdr.SessionSnapshot{
-		Version:            "0.9.0",
 		FocusedWorkspaceID: "w1",
 		Workspaces: []herdr.WorkspaceRow{
 			{WorkspaceID: "w1", Label: "one", AgentStatus: "idle", ActiveTabID: "w1:t1"},
@@ -126,7 +125,7 @@ func TestCompiledCLIRejectsBadArguments(t *testing.T) {
 }
 
 func TestCompiledLaunchOpensPluginPopup(t *testing.T) {
-	snapshot := herdr.SessionSnapshot{Version: "0.9.0"}
+	snapshot := herdr.SessionSnapshot{}
 	server := &hsehtest.Server{Snapshot: snapshot}
 	socketPath, stateDir := hsehtest.Start(t, server)
 	configDir := t.TempDir()
@@ -151,12 +150,12 @@ func TestCompiledLaunchOpensPluginPopup(t *testing.T) {
 
 func TestCompiledEventHookReleaseAndMove(t *testing.T) {
 	snapshot := herdr.SessionSnapshot{
-		Version: "0.9.0",
 		Agents: []herdr.AgentRow{
 			{PaneRow: herdr.PaneRow{PaneID: "w1:p1", Agent: "pi", AgentSession: &herdr.AgentSession{Value: "a"}}},
 		},
 	}
 	socketPath, stateDir := hsehtest.Start(t, &hsehtest.Server{Snapshot: snapshot})
+	useHsehTestSession(t, stateDir)
 	env := hsehtest.Env(socketPath, stateDir, t.TempDir())
 	run := func(event, payload string) {
 		out, err := runCompiledHseh(append(env, "HERDR_PLUGIN_EVENT="+event, "HERDR_PLUGIN_EVENT_JSON="+payload), "event")
@@ -167,11 +166,17 @@ func TestCompiledEventHookReleaseAndMove(t *testing.T) {
 	run("pane.agent_detected", `{"event":"pane_agent_detected","data":{"type":"pane_agent_detected","pane_id":"w1:p1","workspace_id":"w1","agent":"pi","released":false}}`)
 	run("pane.agent_detected", `{"event":"pane_agent_detected","data":{"type":"pane_agent_detected","pane_id":"w1:p1","workspace_id":"w1","agent":"pi","released":true}}`)
 	run("pane.moved", `{"event":"pane_moved","data":{"type":"pane_moved","previous_pane_id":"w1:p1","pane":{"pane_id":"w2:p9"}}}`)
+	got, err := focus.LoadFile(stateDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if occupant, ok := got.Occupants["w2:p9"]; !ok || occupant.Generation != 2 {
+		t.Fatalf("release must start a new generation and move must carry it to w2:p9: %+v", got.Occupants)
+	}
 }
 
 func TestCompiledListDoesNotAdoptConversationWithoutMove(t *testing.T) {
 	snapshot := herdr.SessionSnapshot{
-		Version: "0.9.0",
 		Agents: []herdr.AgentRow{
 			{PaneRow: herdr.PaneRow{PaneID: "w2:p9", Agent: "pi", AgentSession: &herdr.AgentSession{Value: "shared"}}},
 		},
@@ -194,7 +199,6 @@ func TestCompiledListDoesNotAdoptConversationWithoutMove(t *testing.T) {
 
 func TestCompiledEventHookMoveAfterSnapshotDrop(t *testing.T) {
 	snapshot := herdr.SessionSnapshot{
-		Version: "0.9.0",
 		Agents: []herdr.AgentRow{
 			{PaneRow: herdr.PaneRow{PaneID: "w2:p9", Agent: "pi", AgentSession: &herdr.AgentSession{Value: "a"}}},
 		},

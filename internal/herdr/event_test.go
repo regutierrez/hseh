@@ -3,14 +3,14 @@ package herdr
 import "testing"
 
 func TestParsePluginEventJSONPreservesLifecycleData(t *testing.T) {
-	data, err := ParsePluginEventJSON(`{"event":"pane_agent_detected","data":{"type":"pane_agent_detected","pane_id":"w1:p1","workspace_id":"w1","agent":"pi","released":true}}`)
+	data, err := parsePluginEventJSON(`{"event":"pane_agent_detected","data":{"type":"pane_agent_detected","pane_id":"w1:p1","workspace_id":"w1","agent":"pi","released":true}}`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if data.Agent != "pi" || !data.Released || PluginEventPaneID(data) != "w1:p1" {
 		t.Fatalf("real envelope loses lifecycle data: %+v", data)
 	}
-	nested, err := ParsePluginEventJSON(`{"event":"pane_moved","data":{"previous_pane_id":"w1:p1","pane":{"pane_id":"w2:p9"}}}`)
+	nested, err := parsePluginEventJSON(`{"event":"pane_moved","data":{"previous_pane_id":"w1:p1","pane":{"pane_id":"w2:p9"}}}`)
 	if err != nil {
 		t.Fatal(err)
 	}

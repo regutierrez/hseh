@@ -9,8 +9,8 @@ import (
 	"github.com/regutierrez/hseh/internal/config"
 )
 
-// SidebarToken is one configured sidebar cell, including optional inline style.
-type SidebarToken struct {
+// sidebarToken is one configured sidebar cell, including optional inline style.
+type sidebarToken struct {
 	Name   string
 	Fg     string
 	Bold   bool
@@ -18,11 +18,11 @@ type SidebarToken struct {
 	Styled bool
 }
 
-// SidebarLayout is the parsed Herdr sidebar configuration used by the picker. Spaces rows
+// sidebarLayout is the parsed Herdr sidebar configuration used by the picker. Spaces rows
 // have a fixed sesh-style shape, so only the agent rows and status glyph style are read.
-type SidebarLayout struct {
-	AgentRows        [][]SidebarToken
-	AgentRowsByAgent map[string][][]SidebarToken
+type sidebarLayout struct {
+	AgentRows        [][]sidebarToken
+	AgentRowsByAgent map[string][][]sidebarToken
 	StatusIndicators string
 }
 
@@ -38,14 +38,10 @@ type herdrSidebarFile struct {
 	} `toml:"ui"`
 }
 
-func defaultAgentSidebarRows() [][]string {
-	return [][]string{{"state_icon", "machine", "workspace", "tab"}, {"agent"}}
-}
-
-func defaultSidebarLayout() SidebarLayout {
-	return SidebarLayout{
-		AgentRows:        tokensFromNames(defaultAgentSidebarRows()),
-		AgentRowsByAgent: map[string][][]SidebarToken{},
+func defaultSidebarLayout() sidebarLayout {
+	return sidebarLayout{
+		AgentRows:        tokensFromNames([][]string{{"state_icon", "machine", "workspace", "tab"}, {"agent"}}),
+		AgentRowsByAgent: map[string][][]sidebarToken{},
 		StatusIndicators: "dots",
 	}
 }
@@ -69,8 +65,8 @@ func readHerdrConfig(configPath, scope string, v any) []string {
 	return nil
 }
 
-// LoadSidebarLayout reads ui.sidebar agent rows, rows_by_agent, token styles, and status_indicators.
-func LoadSidebarLayout(configPath string) (SidebarLayout, []string) {
+// loadSidebarLayout reads ui.sidebar agent rows, rows_by_agent, token styles, and status_indicators.
+func loadSidebarLayout(configPath string) (sidebarLayout, []string) {
 	layout := defaultSidebarLayout()
 	var file herdrSidebarFile
 	if errs := readHerdrConfig(configPath, "sidebar", &file); errs != nil {
@@ -90,34 +86,34 @@ func LoadSidebarLayout(configPath string) (SidebarLayout, []string) {
 	return layout, nil
 }
 
-func tokensFromNames(rows [][]string) [][]SidebarToken {
-	var out [][]SidebarToken
+func tokensFromNames(rows [][]string) [][]sidebarToken {
+	var out [][]sidebarToken
 	for _, row := range rows {
-		var cells []SidebarToken
+		var cells []sidebarToken
 		for _, name := range row {
-			cells = append(cells, SidebarToken{Name: name})
+			cells = append(cells, sidebarToken{Name: name})
 		}
 		out = append(out, cells)
 	}
 	return out
 }
 
-func parseSidebarTokenRows(raw [][]any) [][]SidebarToken {
-	var rows [][]SidebarToken
+func parseSidebarTokenRows(raw [][]any) [][]sidebarToken {
+	var rows [][]sidebarToken
 	for _, row := range raw {
-		var cells []SidebarToken
+		var cells []sidebarToken
 		for _, item := range row {
 			switch value := item.(type) {
 			case string:
 				if value != "" {
-					cells = append(cells, SidebarToken{Name: value})
+					cells = append(cells, sidebarToken{Name: value})
 				}
 			case map[string]any:
 				name, _ := value["token"].(string)
 				if name == "" {
 					continue
 				}
-				cell := SidebarToken{Name: name, Styled: true}
+				cell := sidebarToken{Name: name, Styled: true}
 				if fg, ok := value["fg"].(string); ok {
 					cell.Fg = fg
 				}
@@ -137,9 +133,7 @@ func parseSidebarTokenRows(raw [][]any) [][]SidebarToken {
 	return rows
 }
 
-// Herdr 0.9.0 settings preview in the installed binary:
-// color dots  ● ● ● ○ ·
-// distinct symbols  × ◐ ✓ ○ ·
+// Glyphs mirror the settings preview in Herdr 0.9.0.
 func stateIconGlyph(status, mode string) string {
 	if mode == "symbols" {
 		switch status {
@@ -180,7 +174,7 @@ func stateIconColor(status string) string {
 	}
 }
 
-func stylePlainToken(token SidebarToken, plain, status string) string {
+func stylePlainToken(token sidebarToken, plain, status string) string {
 	if plain == "" {
 		return ""
 	}

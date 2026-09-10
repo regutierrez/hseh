@@ -1,8 +1,6 @@
 package picker
 
 import (
-	"time"
-
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/regutierrez/hseh/internal/focus"
 	"github.com/regutierrez/hseh/internal/herdr"
@@ -11,14 +9,13 @@ import (
 
 // newModel builds a model with snapshot, history and layout already in hand, so tests can
 // drive Update without the async first-snapshot round trip.
-func newModel(view string, snapshot herdr.SessionSnapshot, history focus.History, layout SidebarLayout, pollEvery time.Duration, wideMin int) model {
+func newModel(view string, snapshot herdr.SessionSnapshot, history focus.History, wideMin int) model {
 	history = focus.Prune(history, snapshot)
 	m := model{
 		view:               view,
 		snapshot:           snapshot,
 		history:            history,
-		layout:             layout,
-		previewEvery:       pollEvery,
+		layout:             defaultSidebarLayout(),
 		widePreviewMinCols: wideMin,
 		launch:             launchFromSnapshot(snapshot, history),
 		snapshotReady:      true,

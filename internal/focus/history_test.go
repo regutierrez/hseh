@@ -141,7 +141,7 @@ func TestSelectNextWorkspaceUsesPreviousThenCycle(t *testing.T) {
 			{WorkspaceID: "wC"},
 		},
 	}
-	history, target := SelectNextWorkspace(history, snapshot, 1000)
+	history, target := selectNextWorkspace(history, snapshot, 1000)
 	if target != "wC" {
 		t.Fatalf("previous space, got %q", target)
 	}
@@ -149,7 +149,7 @@ func TestSelectNextWorkspaceUsesPreviousThenCycle(t *testing.T) {
 	snapshot.Workspaces[0].Focused = false
 	snapshot.Workspaces[2].Focused = true
 	history = recordWorkspaceFocus(history, "wC")
-	_, target = SelectNextWorkspace(history, snapshot, 1250)
+	_, target = selectNextWorkspace(history, snapshot, 1250)
 	if target != "wA" {
 		t.Fatalf("cycle, got %q", target)
 	}

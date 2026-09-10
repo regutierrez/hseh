@@ -18,9 +18,9 @@ var requestSeq atomic.Uint64
 // readContinuityWitness is swapped by tests to observe when the witness is read relative to the request write.
 var readContinuityWitness = ReadContinuityWitnessFromConn
 
-// CallContext sends one newline-delimited JSON request and decodes the result into
+// callContext sends one newline-delimited JSON request and decodes the result into
 // result (nil discards it). The socket is closed when ctx is cancelled.
-func CallContext(ctx context.Context, method string, params any, result any) (ContinuityWitness, error) {
+func callContext(ctx context.Context, method string, params any, result any) (ContinuityWitness, error) {
 	socketPath := config.SocketPath()
 	if socketPath == "" {
 		return ContinuityWitness{}, fmt.Errorf("hseh herdr socket: HERDR_SOCKET_PATH is not set")
@@ -55,9 +55,6 @@ func CallContext(ctx context.Context, method string, params any, result any) (Co
 		Method string `json:"method"`
 		Params any    `json:"params"`
 	}{ID: id, Method: method, Params: params}
-	if params == nil {
-		request.Params = map[string]any{}
-	}
 	payload, err := json.Marshal(request)
 	if err != nil {
 		return ContinuityWitness{}, fmt.Errorf("hseh herdr socket: encode %s: %w", method, err)
@@ -138,10 +135,6 @@ func Hedged(ctx context.Context) bool {
 	return allowed
 }
 
-func hedgeAllowed(ctx context.Context, method string) bool {
-	return Hedged(ctx) && idempotentMethod(method)
-}
-
 // idempotentMethod reports methods that are safe to send twice.
 // plugin.pane.open qualifies because Herdr refuses a second popup with ui_busy
 // while the first is open; OpenPluginPopup treats that refusal as success.
@@ -164,7 +157,7 @@ type reply struct {
 // is resent on a fresh connection and the first reply wins. The caller owns
 // conn; the hedge connection is always closed before returning.
 func readReply(ctx context.Context, conn net.Conn, socketPath, method string, payload []byte) ([]byte, error) {
-	if !hedgeAllowed(ctx, method) {
+	if !Hedged(ctx) || !idempotentMethod(method) {
 		return bufio.NewReader(conn).ReadBytes('\n')
 	}
 	replies := make(chan reply, 2)
