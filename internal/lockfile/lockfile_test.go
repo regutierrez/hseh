@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestRetryExclusiveLockErrorOnlyContention(t *testing.T) {
+func TestRetryableOnlyContention(t *testing.T) {
 	if !retryable(syscall.EAGAIN) {
 		t.Fatal("EAGAIN should retry")
 	}

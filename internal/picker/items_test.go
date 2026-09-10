@@ -1,21 +1,29 @@
 package picker
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/regutierrez/hseh/internal/focus"
 	"github.com/regutierrez/hseh/internal/herdr"
-	"github.com/regutierrez/hseh/internal/termtext"
 )
 
-func TestRenderTokenRowsOmitsMissingValues(t *testing.T) {
-	rows := renderTokenRows([][]string{{"state_icon", "workspace", "tab"}, {"agent"}, {"$name2"}}, map[string]string{
+func TestRenderSidebarRowsOmitsMissingValues(t *testing.T) {
+	rows, _ := renderSidebarRows(tokensFromNames([][]string{{"state_icon", "workspace", "tab"}, {"agent"}, {"$name2"}}), map[string]string{
 		"state_icon": "idle",
 		"workspace":  "hseh",
 		"agent":      "pi",
-	})
-	if len(rows) != 2 || termtext.StripControls(rows[0]) != "idle · hseh" || termtext.StripControls(rows[1]) != "pi" {
+	}, "idle")
+	if len(rows) != 2 || rows[0] != "idle · hseh" || rows[1] != "pi" {
 		t.Fatalf("got %#v", rows)
+	}
+}
+
+func TestSpaceRowsStripTitleControls(t *testing.T) {
+	snapshot := herdr.SessionSnapshot{Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w1", Label: "safe\x1b[2Junsafe"}}}
+	items := buildSpaceItems(snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil)
+	if strings.Contains(strings.Join(items[0].Rows, ""), "\x1b") || strings.Contains(items[0].Label, "\x1b") {
+		t.Fatalf("terminal controls survive in plain rows: %q label %q", items[0].Rows, items[0].Label)
 	}
 }
 
@@ -49,7 +57,7 @@ func TestFilterPickerItemsKeepsViewOrderOnScoreTie(t *testing.T) {
 		{ID: "a", SearchText: "alpha workspace"},
 		{ID: "b", SearchText: "alpha workspace"},
 	}
-	got := FilterItems(items, "alpha")
+	got, _ := filterItemsInto(nil, nil, items, "alpha")
 	if len(got) != 2 || got[0].ID != "a" || got[1].ID != "b" {
 		t.Fatalf("got %#v", got)
 	}
@@ -61,18 +69,5 @@ func TestPreselectSkipsAbsentHistoryTarget(t *testing.T) {
 	got := PreselectItemID(ViewAgents, items, history, LaunchContext{CurrentAgent: "w9:p9#1"})
 	if got != SelectionID(KindAgent, "w1:p2#1") {
 		t.Fatalf("absent history target offered: %q", got)
-	}
-}
-
-func TestBuildPickerItemsAgentsUsePriority(t *testing.T) {
-	snapshot := herdr.SessionSnapshot{
-		Agents: []herdr.AgentRow{
-			{PaneRow: herdr.PaneRow{PaneID: "w1:pIdle", AgentStatus: "idle", DisplayAgent: "idle"}, StateChangeSeq: 9},
-			{PaneRow: herdr.PaneRow{PaneID: "w1:pBlock", AgentStatus: "blocked", DisplayAgent: "block"}, StateChangeSeq: 1},
-		},
-	}
-	items := buildAgentItems(snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout())
-	if items[0].PaneID != "w1:pBlock" {
-		t.Fatalf("blocked should rank first, got %#v", items[0])
 	}
 }

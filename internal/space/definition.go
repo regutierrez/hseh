@@ -36,6 +36,11 @@ type Definition struct {
 	ResolvedDir string          `toml:"-"`
 }
 
+// identity is the association key for this definition: id plus resolved directory.
+func (def Definition) identity() AssociationRecord {
+	return AssociationRecord{DefinitionID: def.ID, ResolvedDir: def.ResolvedDir}
+}
+
 // DefinitionTab is one tab in a reusable space definition.
 type DefinitionTab struct {
 	Name       string           `toml:"name"`
@@ -59,15 +64,6 @@ func newDefinitionID() (string, error) {
 		return "", fmt.Errorf("hseh definition: generate id: %w", err)
 	}
 	return hex.EncodeToString(raw[:]), nil
-}
-
-func decodeDefinitionTOML(payload []byte) (Definition, toml.MetaData, error) {
-	var def Definition
-	meta, err := toml.Decode(string(payload), &def)
-	if err != nil {
-		return Definition{}, meta, err
-	}
-	return def, meta, nil
 }
 
 func definitionHasTopLevelID(meta toml.MetaData) bool {
@@ -104,13 +100,14 @@ func validateDefinition(def Definition) error {
 	if len(def.Tabs) == 0 {
 		return fmt.Errorf("hseh definition %q (%s): needs at least one [[tabs]] entry", def.Name, def.SourceFile)
 	}
-	return validateDefinitionTabs(def.Name, def.SourceFile, def.Tabs)
+	return validateDefinitionTabs(def)
 }
 
 // validateDefinitionTabs copies Herdr Plus tab rules: name required, command or panes, at most 4 panes,
 // split down/right, omitted ratio is an even split. See third_party/herdr-plus/NOTICE.
-func validateDefinitionTabs(label, source string, tabs []DefinitionTab) error {
-	for i, tab := range tabs {
+func validateDefinitionTabs(def Definition) error {
+	label, source := def.Name, def.SourceFile
+	for i, tab := range def.Tabs {
 		if strings.TrimSpace(tab.Name) == "" {
 			return fmt.Errorf("%q (%s): tab %d is missing a name", label, source, i+1)
 		}
@@ -130,38 +127,15 @@ func validateDefinitionTabs(label, source string, tabs []DefinitionTab) error {
 				return fmt.Errorf("%q (%s): tab %q pane %d has split %q; must be %q or %q", label, source, tab.Name, j+1, pane.Split, splitDown, splitRight)
 			}
 			if math.IsNaN(pane.Ratio) || math.IsInf(pane.Ratio, 0) || pane.Ratio < 0 || pane.Ratio >= 1 {
-				return fmt.Errorf("%q (%s): tab %q pane %d has ratio %v; must be greater than 0 and less than 1", label, source, tab.Name, j+1, pane.Ratio)
+				return fmt.Errorf("%q (%s): tab %q pane %d has ratio %v; must be omitted for an even split or between 0 and 1", label, source, tab.Name, j+1, pane.Ratio)
 			}
 		}
 	}
 	return nil
 }
 
-func loadDefinitionFromBytes(path string, payload []byte) (Definition, toml.MetaData, error) {
-	def, meta, err := decodeDefinitionTOML(payload)
-	if err != nil {
-		return Definition{}, meta, fmt.Errorf("hseh definition: parse %s: %w", filepath.Base(path), err)
-	}
-	def.SourceFile = filepath.Base(path)
-	return def, meta, nil
-}
-
-func canonicalDefinitionPath(path string) string {
-	abs, err := filepath.Abs(path)
-	if err != nil {
-		return path
-	}
-	resolved, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		return abs
-	}
-	canonical, err := filepath.Abs(resolved)
-	if err != nil {
-		return resolved
-	}
-	return canonical
-}
-
+// definitionIDLockPath keys the id-insertion lock by the file's canonical path so every
+// alias of one file (relative, absolute, symlinked) contends for the same lock.
 func definitionIDLockPath(canonical string) string {
 	sum := sha256.Sum256([]byte(canonical))
 	return filepath.Join(config.StateDir(), "definition-id-locks", hex.EncodeToString(sum[:])+".lock")
@@ -261,10 +235,12 @@ func replaceDefinitionFile(path string, original, next []byte) error {
 }
 
 func parseExistingDefinition(path string, payload []byte) (Definition, toml.MetaData, error) {
-	def, meta, err := loadDefinitionFromBytes(path, payload)
+	var def Definition
+	meta, err := toml.Decode(string(payload), &def)
 	if err != nil {
-		return Definition{}, meta, err
+		return Definition{}, meta, fmt.Errorf("hseh definition: parse %s: %w", filepath.Base(path), err)
 	}
+	def.SourceFile = filepath.Base(path)
 	if definitionHasTopLevelID(meta) {
 		if err := validateDefinitionIDValue(def.ID); err != nil {
 			return Definition{}, meta, fmt.Errorf("hseh definition %s: %w", def.SourceFile, err)
@@ -280,9 +256,12 @@ func insertMissingDefinitionID(path string) (Definition, error) {
 	if err := definitionFileWritable(path); err != nil {
 		return Definition{}, err
 	}
-	canonical := canonicalDefinitionPath(path)
+	canonical, err := canonicalizeDirPath(path)
+	if err != nil {
+		return Definition{}, fmt.Errorf("hseh definition: resolve %s: %w", path, err)
+	}
 	var def Definition
-	err := lockfile.WithExclusive(definitionIDLockPath(canonical), func() error {
+	err = lockfile.WithExclusive(definitionIDLockPath(canonical), func() error {
 		current, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("hseh definition: read %s: %w", path, err)
@@ -310,9 +289,9 @@ func insertMissingDefinitionID(path string) (Definition, error) {
 	return def, err
 }
 
-// EnsureDefinitionID loads a definition. Existing top-level ids are a read-only
+// ensureDefinitionID loads a definition. Existing top-level ids are a read-only
 // fast path with no adjacent lock file. Missing ids take a state-scoped lock.
-func EnsureDefinitionID(path string) (Definition, error) {
+func ensureDefinitionID(path string) (Definition, error) {
 	payload, err := os.ReadFile(path)
 	if err != nil {
 		return Definition{}, fmt.Errorf("hseh definition: read %s: %w", path, err)
@@ -332,14 +311,11 @@ func resolveDefinitionDir(def Definition) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("hseh definition %q (%s): working_dir: %w", def.Name, def.SourceFile, err)
 	}
-	abs, err := filepath.Abs(expanded)
+	canonical, err := canonicalizeDirPath(expanded)
 	if err != nil {
 		return "", fmt.Errorf("hseh definition %q (%s): working_dir: %w", def.Name, def.SourceFile, err)
 	}
-	if resolved, err := filepath.EvalSymlinks(abs); err == nil {
-		return resolved, nil
-	}
-	return filepath.Clean(abs), nil
+	return canonical, nil
 }
 
 // LoadDefinitions reads valid *.toml files from the plugin spaces directory.
@@ -362,7 +338,7 @@ func LoadDefinitions(dir string) ([]Definition, []string) {
 			continue
 		}
 		path := filepath.Join(dir, entry.Name())
-		def, err := EnsureDefinitionID(path)
+		def, err := ensureDefinitionID(path)
 		if err != nil {
 			errs = append(errs, err.Error())
 			continue
@@ -394,7 +370,7 @@ func LoadDefinitions(dir string) ([]Definition, []string) {
 	return defs, errs
 }
 
-func FindDefinitionByID(defs []Definition, id string) (Definition, bool) {
+func findDefinitionByID(defs []Definition, id string) (Definition, bool) {
 	for _, def := range defs {
 		if def.ID == id {
 			return def, true
@@ -405,23 +381,4 @@ func FindDefinitionByID(defs []Definition, id string) (Definition, bool) {
 
 func SanitizeDisplayText(value string) string {
 	return strings.TrimSpace(termtext.StripControls(value))
-}
-
-func DefinitionPreviewText(def Definition) string {
-	var b bytes.Buffer
-	fmt.Fprintf(&b, "%s\n%s\n", SanitizeDisplayText(def.Name), SanitizeDisplayText(def.ResolvedDir))
-	if desc := SanitizeDisplayText(def.Description); desc != "" {
-		fmt.Fprintf(&b, "%s\n", desc)
-	}
-	for _, tab := range def.Tabs {
-		fmt.Fprintf(&b, "tab %s\n", SanitizeDisplayText(tab.Name))
-		for _, pane := range tab.effectivePanes() {
-			cmd := SanitizeDisplayText(pane.Command)
-			if cmd == "" {
-				cmd = "(shell)"
-			}
-			fmt.Fprintf(&b, "  %s\n", cmd)
-		}
-	}
-	return strings.TrimRight(b.String(), "\n")
 }

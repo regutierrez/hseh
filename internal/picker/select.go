@@ -1,48 +1,26 @@
 package picker
 
 import (
-	"os"
 	"strings"
 
 	"github.com/regutierrez/hseh/internal/focus"
 	"github.com/regutierrez/hseh/internal/herdr"
 )
 
+// LaunchContext names the targets focused when the popup opened, so preselection can skip them.
 type LaunchContext struct {
-	FromAgentPane bool
-	CurrentSpace  string
-	CurrentAgent  string
+	CurrentSpace string
+	CurrentAgent string
 }
 
-func launchFromEnv(snapshot herdr.SessionSnapshot, history focus.History) LaunchContext {
-	ctx := LaunchContext{
-		CurrentSpace: snapshot.FocusedWorkspaceID,
-	}
+func launchFromSnapshot(snapshot herdr.SessionSnapshot, history focus.History) LaunchContext {
+	ctx := LaunchContext{CurrentSpace: snapshot.FocusedWorkspaceID}
 	if snapshot.FocusedPaneID != "" {
 		if id, ok := focus.CurrentAgentLiveID(history, snapshot.FocusedPaneID); ok {
 			ctx.CurrentAgent = id.String()
 		}
-		for _, agent := range snapshot.Agents {
-			if agent.PaneID == snapshot.FocusedPaneID {
-				ctx.FromAgentPane = true
-				break
-			}
-		}
-	}
-	if os.Getenv("HERDR_PLUGIN_CONTEXT_JSON") != "" {
-		// focused_pane_agent in context is enough to treat launch as from an agent pane.
-		if !ctx.FromAgentPane {
-			ctx.FromAgentPane = containsAgentContextJSON(os.Getenv("HERDR_PLUGIN_CONTEXT_JSON"))
-		}
 	}
 	return ctx
-}
-
-func containsAgentContextJSON(raw string) bool {
-	if strings.Contains(raw, `"focused_pane_agent":null`) || strings.Contains(raw, `"focused_pane_agent":""`) {
-		return false
-	}
-	return strings.Contains(raw, `"focused_pane_agent":"`)
 }
 
 // PreselectItemID chooses the previous target, then first non-current, then current.
@@ -116,7 +94,7 @@ func previousAgentID(history focus.History, current string, items []Item) string
 func isCurrentItem(item Item, launch LaunchContext) bool {
 	switch item.Kind {
 	case KindSpace:
-		return item.WorkspaceID == launch.CurrentSpace || itemTarget(item) == launch.CurrentSpace
+		return item.WorkspaceID == launch.CurrentSpace
 	case KindAgent:
 		return itemTarget(item) == launch.CurrentAgent
 	default:

@@ -73,14 +73,12 @@ func CreateTab(ctx context.Context, workspaceID, label, cwd string, focus bool) 
 }
 
 func RenameTab(ctx context.Context, tabID, label string) error {
-	var result map[string]any
-	_, err := CallContext(ctx, "tab.rename", map[string]any{"tab_id": tabID, "label": label}, &result)
+	_, err := CallContext(ctx, "tab.rename", map[string]any{"tab_id": tabID, "label": label}, nil)
 	return err
 }
 
 func CloseTab(ctx context.Context, tabID string) error {
-	var result map[string]any
-	_, err := CallContext(ctx, "tab.close", map[string]any{"tab_id": tabID}, &result)
+	_, err := CallContext(ctx, "tab.close", map[string]any{"tab_id": tabID}, nil)
 	return err
 }
 
@@ -108,17 +106,15 @@ func SplitPane(ctx context.Context, targetPaneID, direction string, ratio float6
 }
 
 func RenamePane(ctx context.Context, paneID, label string) error {
-	var result map[string]any
-	_, err := CallContext(ctx, "pane.rename", map[string]any{"pane_id": paneID, "label": label}, &result)
+	_, err := CallContext(ctx, "pane.rename", map[string]any{"pane_id": paneID, "label": label}, nil)
 	return err
 }
 
 func SubmitPaneCommand(ctx context.Context, paneID, command string) error {
-	var result map[string]any
 	_, err := CallContext(ctx, "pane.send_input", map[string]any{
 		"pane_id": paneID,
 		"text":    command,
 		"keys":    []string{"Enter"},
-	}, &result)
+	}, nil)
 	return err
 }

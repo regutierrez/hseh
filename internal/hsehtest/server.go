@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"sync"
@@ -25,9 +26,8 @@ type Server struct {
 	// FailMethod, when set, makes that method fail on its FailAfter-th call (default first).
 	FailMethod string
 	FailAfter  int
-	// SnapshotDelay and CreateDelay slow session.snapshot and workspace.create.
+	// SnapshotDelay slows session.snapshot.
 	SnapshotDelay time.Duration
-	CreateDelay   time.Duration
 	// PaneReadText is the pane.read body; empty means "hello".
 	PaneReadText string
 
@@ -140,12 +140,6 @@ func (s *Server) serve(conn net.Conn) {
 		time.Sleep(delay)
 		s.mu.Lock()
 	}
-	if req.Method == "workspace.create" && s.CreateDelay > 0 {
-		delay := s.CreateDelay
-		s.mu.Unlock()
-		time.Sleep(delay)
-		s.mu.Lock()
-	}
 	if s.FailMethod != "" && req.Method == s.FailMethod {
 		s.failHits++
 		after := s.FailAfter
@@ -165,15 +159,11 @@ func (s *Server) serve(conn net.Conn) {
 		result = herdr.SnapshotEnvelope{Type: "session_snapshot", Snapshot: &snap}
 	case "pane.read":
 		s.Reads.Add(1)
-		var params struct {
-			PaneID string `json:"pane_id"`
-		}
-		_ = json.Unmarshal(req.Params, &params)
 		text := s.PaneReadText
 		if text == "" {
 			text = "hello"
 		}
-		result = herdr.PaneReadEnvelope{Type: "pane_read", Read: &herdr.PaneReadResult{PaneID: params.PaneID, Text: text, Format: "ansi", Source: "visible"}}
+		result = herdr.PaneReadEnvelope{Type: "pane_read", Read: &herdr.PaneReadResult{Text: text}}
 	case "plugin.pane.open":
 		var params PopupOpen
 		_ = json.Unmarshal(req.Params, &params)
@@ -211,7 +201,7 @@ func (s *Server) serve(conn net.Conn) {
 		pane := ws + ":p1"
 		s.created = append(s.created, ws)
 		s.Snapshot.Workspaces = append(s.Snapshot.Workspaces, herdr.WorkspaceRow{WorkspaceID: ws, Label: params.Label, ActiveTabID: tab})
-		s.Snapshot.Tabs = append(s.Snapshot.Tabs, herdr.TabRow{TabID: tab, WorkspaceID: ws, Label: params.Label})
+		s.Snapshot.Tabs = append(s.Snapshot.Tabs, herdr.TabRow{TabID: tab, Label: params.Label})
 		s.Snapshot.Panes = append(s.Snapshot.Panes, herdr.PaneRow{PaneID: pane, WorkspaceID: ws, TabID: tab, Cwd: params.Cwd})
 		s.Snapshot.Layouts = append(s.Snapshot.Layouts, herdr.PaneLayout{WorkspaceID: ws, TabID: tab, FocusedPaneID: pane})
 		result = map[string]any{
@@ -249,14 +239,48 @@ func (s *Server) serve(conn net.Conn) {
 // WriteDefinition writes a one-tab space definition under configDir/spaces.
 func WriteDefinition(t *testing.T, configDir, id, name, work, command string) {
 	t.Helper()
+	body := "id = \"" + id + "\"\nname = \"" + name + "\"\nworking_dir = \"" + work + "\"\n[[tabs]]\nname = \"main\"\ncommand = \"" + command + "\"\n"
+	WriteDefinitionTOML(t, configDir, name, body)
+}
+
+// WriteDefinitionTOML writes a raw definition body as configDir/spaces/<name>.toml.
+func WriteDefinitionTOML(t *testing.T, configDir, name, body string) {
+	t.Helper()
 	dir := filepath.Join(configDir, "spaces")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	body := "id = \"" + id + "\"\nname = \"" + name + "\"\nworking_dir = \"" + work + "\"\n[[tabs]]\nname = \"main\"\ncommand = \"" + command + "\"\n"
 	if err := os.WriteFile(filepath.Join(dir, name+".toml"), []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// Witness reads the continuity witness of the fake server listening at socket, the
+// same way a real hseh call does, so seeded history passes the witness check.
+func Witness(t *testing.T, socket string) herdr.ContinuityWitness {
+	t.Helper()
+	conn, err := net.Dial("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	witness, err := herdr.ReadContinuityWitnessFromConn(conn, socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return witness
+}
+
+// Git runs one git command in dir with hooks, signing and identity pinned so fixtures
+// behave the same on every machine. It fails the test on a non-zero exit.
+func Git(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid"}, args...)...)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v %s", args, err, out)
+	}
+	return string(out)
 }
 
 // Env is the process environment for a compiled hseh pointed at a fake server.
@@ -267,4 +291,18 @@ func Env(socket, state, config string) []string {
 		"HERDR_PLUGIN_CONFIG_DIR="+config,
 		"HERDR_SESSION=hseh-test",
 	)
+}
+
+// Main runs a package's tests with HERDR_PLUGIN_CONFIG_DIR pointed at an empty
+// directory, so in-process code that loads hseh.toml (tracing, popup size) never
+// reads the developer's real config or writes to a real trace file.
+func Main(m *testing.M) {
+	dir, err := os.MkdirTemp("", "hseh-test-config-")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("HERDR_PLUGIN_CONFIG_DIR", dir)
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
 }

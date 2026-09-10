@@ -64,35 +64,17 @@ type ListSession struct {
 	SocketPath string `json:"socket_path"`
 }
 
-func sidebarLayoutFromNameRows(spaceRows, agentRows [][]string) SidebarLayout {
-	layout := defaultSidebarLayout()
-	if len(spaceRows) > 0 {
-		layout.SpaceRows = tokensFromNames(spaceRows)
+// BuildItemsWithLayout builds Spaces or Agents rows from the live snapshot plus history,
+// using the parsed sidebar layout for status glyphs and per-agent description rows.
+// git is keyed by active directory and only decorates Spaces rows.
+func BuildItemsWithLayout(view string, snapshot herdr.SessionSnapshot, history focus.History, layout SidebarLayout, git map[string]gitinfo.WorkspaceGit) []Item {
+	if view == ViewAgents {
+		return buildAgentItems(snapshot, history, layout)
 	}
-	if len(agentRows) > 0 {
-		layout.AgentRows = tokensFromNames(agentRows)
-	}
-	return layout
+	return buildSpaceItems(snapshot, history, layout, git)
 }
 
-// BuildItems builds Spaces or Agents rows from live snapshot plus history.
-func BuildItems(view string, snapshot herdr.SessionSnapshot, history focus.History, spaceRows, agentRows [][]string) []Item {
-	return BuildItemsWithLayout(view, snapshot, history, sidebarLayoutFromNameRows(spaceRows, agentRows))
-}
-
-// BuildItemsWithLayout uses a parsed sidebar layout for styles and per-agent rows.
-func BuildItemsWithLayout(view string, snapshot herdr.SessionSnapshot, history focus.History, layout SidebarLayout) []Item {
-	spaces := buildSpaceItems(snapshot, history, layout)
-	agents := buildAgentItems(snapshot, history, layout)
-	switch view {
-	case ViewAgents:
-		return agents
-	default:
-		return spaces
-	}
-}
-
-func buildSpaceItems(snapshot herdr.SessionSnapshot, history focus.History, layout SidebarLayout) []Item {
+func buildSpaceItems(snapshot herdr.SessionSnapshot, history focus.History, layout SidebarLayout, gitByDir map[string]gitinfo.WorkspaceGit) []Item {
 	indexOf := map[string]int{}
 	for i, id := range history.Spaces {
 		indexOf[id] = i
@@ -115,7 +97,7 @@ func buildSpaceItems(snapshot herdr.SessionSnapshot, history focus.History, layo
 	var items []Item
 	for _, workspace := range workspaces {
 		dir := herdr.ActiveWorkspaceDirectory(snapshot, workspace.WorkspaceID)
-		git := snapshot.GitByDirectory[dir]
+		git := gitByDir[dir]
 		// The checkout root is stable while the user moves around inside a repository.
 		path := firstNonEmpty(git.Root, dir)
 		name := sanitizeTokenValue(firstNonEmpty(workspace.Label, workspace.WorkspaceID))
@@ -305,15 +287,6 @@ func renderAgentSidebarRows(snapshot herdr.SessionSnapshot, agent herdr.AgentRow
 	return plain, display
 }
 
-func renderTokenRows(layout [][]string, values map[string]string) []string {
-	sanitized := map[string]string{}
-	for key, value := range values {
-		sanitized[key] = sanitizeTokenValue(value)
-	}
-	plain, _ := renderSidebarRows(tokensFromNames(layout), sanitized, sanitized["state_text"])
-	return plain
-}
-
 func renderSidebarRows(layout [][]SidebarToken, values map[string]string, status string) (plain, display []string) {
 	for _, cells := range layout {
 		var plainParts []string
@@ -344,14 +317,9 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// FilterItems ranks matching items by fuzzy quality, then original order.
-func FilterItems(items []Item, query string) []Item {
-	filtered, _ := filterItemsInto(nil, nil, items, query)
-	return filtered
-}
-
-// filterItemsInto appends matches to dst (reusing its backing array) and reuses
-// the search-target scratch slice so per-keystroke filtering does not reallocate.
+// filterItemsInto ranks matching items by fuzzy quality, then original order. It appends
+// to dst (reusing its backing array) and reuses the search-target scratch slice so
+// per-keystroke filtering does not reallocate.
 func filterItemsInto(dst []Item, scratch []string, items []Item, query string) ([]Item, []string) {
 	query = strings.TrimSpace(query)
 	dst = dst[:0]

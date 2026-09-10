@@ -1,6 +1,43 @@
 package picker
 
-import tea "github.com/charmbracelet/bubbletea"
+import (
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/regutierrez/hseh/internal/focus"
+	"github.com/regutierrez/hseh/internal/herdr"
+	"github.com/regutierrez/hseh/internal/space"
+)
+
+// newModel builds a model with snapshot, history and layout already in hand, so tests can
+// drive Update without the async first-snapshot round trip.
+func newModel(view string, snapshot herdr.SessionSnapshot, history focus.History, layout SidebarLayout, pollEvery time.Duration, wideMin int) model {
+	history = focus.Prune(history, snapshot)
+	m := model{
+		view:               view,
+		snapshot:           snapshot,
+		history:            history,
+		layout:             layout,
+		previewEvery:       pollEvery,
+		widePreviewMinCols: wideMin,
+		launch:             launchFromSnapshot(snapshot, history),
+		snapshotReady:      true,
+		catalogReady:       true,
+	}
+	m.rebuildVisible()
+	return m
+}
+
+// setSpaceCatalog installs reusable-space definitions and associations as catalogLoadedMsg would.
+func (m *model) setSpaceCatalog(definitions []space.Definition, records, unresolved []space.AssociationRecord, errs []string) {
+	m.definitions = definitions
+	m.associationRecords = records
+	m.unresolvedRecords = unresolved
+	m.catalogErrors = errs
+	m.catalogReady = true
+	m.recomputeStatus()
+	m.rebuildVisible()
+}
 
 // flattenCmds executes a command tree (including tea.Batch) and returns the non-nil messages.
 func flattenCmds(cmd tea.Cmd) []tea.Msg {

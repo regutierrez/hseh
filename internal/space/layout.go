@@ -3,35 +3,24 @@ package space
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/regutierrez/hseh/internal/herdr"
 )
-
-func preflightDirs(def Definition) error {
-	info, err := os.Stat(def.ResolvedDir)
-	if err != nil || !info.IsDir() {
-		return fmt.Errorf("hseh create %s: working directory does not exist: %s", def.ID, def.ResolvedDir)
-	}
-	if err := checkTabDirs(def.ResolvedDir, def.Tabs); err != nil {
-		return fmt.Errorf("hseh create %s: %w", def.ID, err)
-	}
-	return nil
-}
 
 type pendingPaneCommand struct {
 	paneID  string
 	command string
 }
 
-func applyLayout(ctx context.Context, def Definition, workspaceID, rootTabID, rootPaneID string) (int, error) {
-	dirs, err := resolvePaneDirs(def.ResolvedDir, def.Tabs)
-	if err != nil {
-		return 0, fmt.Errorf("hseh create %s: %w", def.ID, err)
-	}
+// applyLayout builds the definition's tabs and panes inside a freshly created workspace.
+// dirs is resolvePaneDirs output, checked before the workspace was created. Startup
+// commands are submitted last, once every pane exists; the count submitted is returned
+// even on failure so a partial creation reports what already ran.
+func applyLayout(ctx context.Context, def Definition, dirs [][]string, workspaceID, rootTabID, rootPaneID string) (int, error) {
 	var runs []pendingPaneCommand
 	submitted := 0
+	var err error
 	for i, tab := range def.Tabs {
 		tabRoot := rootPaneID
 		if i == 0 {

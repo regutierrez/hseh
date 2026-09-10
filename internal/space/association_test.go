@@ -20,7 +20,7 @@ func TestReconcileMovesCurrentRecordsToUnresolvedWithoutWrite(t *testing.T) {
 	if err := WriteAssociationFile(stateDir, stale); err != nil {
 		t.Fatal(err)
 	}
-	before, err := os.ReadFile(associationStatePath(stateDir))
+	before, err := os.ReadFile(AssociationFilePath(stateDir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestReconcileMovesCurrentRecordsToUnresolvedWithoutWrite(t *testing.T) {
 	if len(got.Unresolved) != 2 {
 		t.Fatalf("unresolved %+v", got.Unresolved)
 	}
-	after, err := os.ReadFile(associationStatePath(stateDir))
+	after, err := os.ReadFile(AssociationFilePath(stateDir))
 	if err != nil {
 		t.Fatal(err)
 	}

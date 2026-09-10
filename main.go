@@ -7,15 +7,28 @@ import (
 	"time"
 
 	"github.com/regutierrez/hseh/internal/picker"
+	"github.com/regutierrez/hseh/internal/space"
 	"github.com/regutierrez/hseh/internal/trace"
 )
 
 func main() {
-	trace.Event("process.start", "args", strings.Join(os.Args[1:], " "), "since_exec_ms", trace.ProcessAge().Milliseconds(), "unix_ms", time.Now().UnixMilli())
+	start := []any{"args", strings.Join(os.Args[1:], " "), "unix_ms", time.Now().UnixMilli()}
+	if age, ok := trace.ProcessAge(); ok {
+		start = append(start, "since_exec_ms", age.Milliseconds())
+	}
+	trace.Event("process.start", start...)
 	if err := runHseh(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "%v\n", err)
 		os.Exit(1)
 	}
+}
+
+// viewArg is the optional view name after a subcommand; ParseView validates it.
+func viewArg(args []string) string {
+	if len(args) > 1 {
+		return args[1]
+	}
+	return picker.ViewSpaces
 }
 
 func runHseh(args []string) error {
@@ -24,40 +37,13 @@ func runHseh(args []string) error {
 	}
 	switch args[0] {
 	case "popup":
-		view := picker.ViewSpaces
-		if len(args) > 1 {
-			view = args[1]
-		}
-		return picker.Run(view)
+		return picker.Run(viewArg(args))
 	case "launch":
-		view := picker.ViewSpaces
-		if len(args) > 1 {
-			view = args[1]
-		}
-		return runLaunch(view)
+		return runLaunch(viewArg(args))
 	case "list":
-		view := picker.ViewSpaces
-		jsonOut := false
-		for i := 1; i < len(args); i++ {
-			switch args[i] {
-			case "--json":
-				jsonOut = true
-			case "--view":
-				if i+1 >= len(args) {
-					return fmt.Errorf("hseh list: --view requires spaces or agents")
-				}
-				i++
-				view = args[i]
-			default:
-				if strings.HasPrefix(args[i], "--view=") {
-					view = args[i][len("--view="):]
-					continue
-				}
-				return fmt.Errorf("hseh list: unknown argument %s", args[i])
-			}
-		}
-		if !jsonOut {
-			return fmt.Errorf("hseh list: --json is required")
+		view, err := parseListArgs(args[1:])
+		if err != nil {
+			return err
 		}
 		return runPickerList(view)
 	case "switch":
@@ -70,8 +56,80 @@ func runHseh(args []string) error {
 		}
 		return runOpenReusableSpace(args[1])
 	case "recover":
-		return runRecoverReusableSpace(args[1:])
+		definitionID, workspaceID, create, err := parseRecoverArgs(args[1:])
+		if err != nil {
+			return err
+		}
+		return runRecoverReusableSpace(definitionID, workspaceID, create)
 	default:
 		return fmt.Errorf("hseh: unknown command %s", args[0])
 	}
+}
+
+// parseListArgs accepts `--json` (required) and `--view spaces|agents`.
+func parseListArgs(args []string) (view string, err error) {
+	view = picker.ViewSpaces
+	jsonOut := false
+	for i := 0; i < len(args); i++ {
+		switch {
+		case args[i] == "--json":
+			jsonOut = true
+		case args[i] == "--view":
+			if i+1 >= len(args) {
+				return "", fmt.Errorf("hseh list: --view requires spaces or agents")
+			}
+			i++
+			view = args[i]
+		case strings.HasPrefix(args[i], "--view="):
+			view = strings.TrimPrefix(args[i], "--view=")
+		default:
+			return "", fmt.Errorf("hseh list: unknown argument %s", args[i])
+		}
+	}
+	if !jsonOut {
+		return "", fmt.Errorf("hseh list: --json is required")
+	}
+	return view, nil
+}
+
+// parseRecoverArgs accepts `<definition-id>` plus exactly one of `--create` or `--workspace <id>`.
+func parseRecoverArgs(args []string) (definitionID, workspaceID string, create bool, err error) {
+	if len(args) == 0 || strings.TrimSpace(args[0]) == "" || strings.HasPrefix(args[0], "-") {
+		return "", "", false, fmt.Errorf("hseh recover: definition id is required")
+	}
+	definitionID = strings.TrimSpace(args[0])
+	seenCreate, seenWorkspace := false, false
+	for i := 1; i < len(args); i++ {
+		arg := args[i]
+		switch {
+		case arg == "--create":
+			if seenCreate {
+				return "", "", false, fmt.Errorf("hseh recover: repeated argument %s", arg)
+			}
+			seenCreate = true
+			create = true
+		case arg == "--workspace" || strings.HasPrefix(arg, "--workspace="):
+			if seenWorkspace {
+				return "", "", false, fmt.Errorf("hseh recover: repeated argument --workspace")
+			}
+			seenWorkspace = true
+			if arg == "--workspace" {
+				if i+1 >= len(args) {
+					return "", "", false, fmt.Errorf("hseh recover: --workspace requires a live workspace id")
+				}
+				i++
+				arg = "--workspace=" + args[i]
+			}
+			workspaceID = strings.TrimSpace(strings.TrimPrefix(arg, "--workspace="))
+			if workspaceID == "" {
+				return "", "", false, fmt.Errorf("hseh recover: --workspace requires a live workspace id")
+			}
+		default:
+			return "", "", false, fmt.Errorf("hseh recover: unknown argument %s", arg)
+		}
+	}
+	if seenCreate == seenWorkspace {
+		return "", "", false, fmt.Errorf("hseh recover: %s", space.RecoverUsage)
+	}
+	return definitionID, workspaceID, create, nil
 }

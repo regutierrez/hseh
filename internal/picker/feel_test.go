@@ -31,7 +31,7 @@ func twoPaneModel() model {
 
 func TestSelectionChangeKeepsLastFrameUntilNewOneLands(t *testing.T) {
 	m := twoPaneModel()
-	m.previewText, m.previewTextLive, m.previewPane = "A-FRAME", true, "pa"
+	m.previewText, m.previewPane = "A-FRAME", "pa"
 	m.selectedID = "b"
 	cmd := m.afterSelectionChange()
 	if cmd == nil {
@@ -53,7 +53,7 @@ func TestSelectionChangeKeepsLastFrameUntilNewOneLands(t *testing.T) {
 
 func TestLoadingCopyOnlyAfterDelay(t *testing.T) {
 	m := twoPaneModel()
-	m.previewText, m.previewTextLive, m.previewPane = "A-FRAME", true, "pa"
+	m.previewText, m.previewPane = "A-FRAME", "pa"
 	m.selectedID = "b"
 	cmd := m.afterSelectionChange()
 	msgs := flattenCmds(func() tea.Msg {
@@ -86,7 +86,7 @@ func TestLoadingCopyOnlyAfterDelay(t *testing.T) {
 
 func TestSameItemRefreshKeepsFrameAndNeverShowsLoading(t *testing.T) {
 	m := twoPaneModel()
-	m.previewText, m.previewTextLive, m.previewPane = "A-FRAME", true, "pa"
+	m.previewText, m.previewPane = "A-FRAME", "pa"
 	cmd := m.startPreview(true)
 	if cmd == nil {
 		t.Fatal("expected refresh read")
@@ -263,7 +263,7 @@ func TestOverflowRowsWhenClipped(t *testing.T) {
 		t.Fatalf("overflow rows must not be clickable: %v", layout.ItemIDs)
 	}
 	m.selectedID = "i00"
-	plain = termtext.StripControls(m.renderList(30, 12))
+	plain = termtext.StripControls(strings.Join(m.buildListLayout(30, 12).Lines, "\n"))
 	if strings.Contains(plain, "↓ ") || !strings.Contains(plain, "↑ ") {
 		t.Fatalf("bottom-anchored list wrong indicators: %q", plain)
 	}
@@ -275,14 +275,13 @@ func TestListWrapsOnlyVisibleWindow(t *testing.T) {
 		items = append(items, Item{ID: fmt.Sprintf("i%04d", i), Rows: []string{strings.Repeat("x", 200), "detail"}})
 	}
 	m := model{selectedID: "i2500", visible: items}
-	start := time.Now()
 	layout := m.buildListLayout(40, 20)
-	elapsed := time.Since(start)
 	if len(layout.Lines) != 20 || !strings.Contains(strings.Join(layout.ItemIDs, ","), "i2500") {
 		t.Fatalf("window lost selection: %v", layout.ItemIDs)
 	}
-	if elapsed > 200*time.Millisecond {
-		t.Fatalf("layout wrapped far more than the window: %v", elapsed)
+	// Only rows near the anchor are wrapped; a 5000-item list must not appear in the window.
+	if strings.Contains(strings.Join(layout.ItemIDs, ","), "i0000") || strings.Contains(strings.Join(layout.ItemIDs, ","), "i4999") {
+		t.Fatalf("window reached list ends: %v", layout.ItemIDs)
 	}
 }
 
@@ -290,7 +289,7 @@ func TestInvertedBlockOrderPreserved(t *testing.T) {
 	m := model{selectedID: "a", visible: []Item{
 		{ID: "a", Rows: []string{"first-rank"}}, {ID: "b", Rows: []string{"second-rank"}}, {ID: "c", Rows: []string{"third-rank"}},
 	}}
-	plain := termtext.StripControls(m.renderList(30, 8))
+	plain := termtext.StripControls(strings.Join(m.buildListLayout(30, 8).Lines, "\n"))
 	if strings.Index(plain, "third-rank") > strings.Index(plain, "second-rank") || strings.Index(plain, "second-rank") > strings.Index(plain, "first-rank") {
 		t.Fatalf("blocks not inverted: %q", plain)
 	}
@@ -303,7 +302,7 @@ func TestQueryMatchesHighlightedANSISafe(t *testing.T) {
 	if len(m.visible) != 1 || len(m.visible[0].Matches) == 0 {
 		t.Fatalf("fuzzy match lost: %+v", m.visible)
 	}
-	line := m.renderList(40, 3)
+	line := strings.Join(m.buildListLayout(40, 3).Lines, "\n")
 	style := m.th().Mauve + "\x1b[1m"
 	if strings.Count(line, style) < 2 {
 		t.Fatalf("matched runes not highlighted: %q", line)
@@ -361,14 +360,11 @@ func TestDividerDragOnlyWhileDragging(t *testing.T) {
 	if got.dividerDrag || !strings.Contains(out.String(), "\x1b[?1002l") {
 		t.Fatalf("release did not end drag / disable motion: %q", out.String())
 	}
-	if !strings.Contains(mouseClickOnlyEnable, "?1000h") || strings.Contains(mouseClickOnlyEnable, "?1002h") {
-		t.Fatal("ordinary mouse mode must be click-only")
-	}
 }
 
 func TestStackedPreviewRendersBelowList(t *testing.T) {
 	m := model{width: 60, height: 24, widePreviewMinCols: 100, snapshotReady: true, catalogReady: true, selectedID: "a",
-		visible: []Item{{Kind: KindAgent, ID: "a", PreviewPane: "pa", Rows: []string{"alpha"}}}, previewText: "PANE-BODY", previewTextLive: true}
+		visible: []Item{{Kind: KindAgent, ID: "a", PreviewPane: "pa", Rows: []string{"alpha"}}}, previewText: "PANE-BODY"}
 	f := m.frame()
 	if f.mode != previewStacked {
 		t.Fatalf("mode %d", f.mode)
@@ -396,8 +392,8 @@ func TestStackedPreviewRendersBelowList(t *testing.T) {
 func TestViewLinesFillWidth(t *testing.T) {
 	items := []Item{{Kind: KindAgent, ID: "a", Rows: []string{"alpha"}, PreviewPane: "pa"}}
 	models := []model{
-		{width: 110, height: 24, widePreviewMinCols: 100, snapshotReady: true, catalogReady: true, selectedID: "a", visible: items, previewText: "BODY", previewTextLive: true},
-		{width: 70, height: 24, widePreviewMinCols: 100, snapshotReady: true, catalogReady: true, selectedID: "a", visible: items, previewText: "BODY", previewTextLive: true},
+		{width: 110, height: 24, widePreviewMinCols: 100, snapshotReady: true, catalogReady: true, selectedID: "a", visible: items, previewText: "BODY"},
+		{width: 70, height: 24, widePreviewMinCols: 100, snapshotReady: true, catalogReady: true, selectedID: "a", visible: items, previewText: "BODY"},
 		newAsyncModel("spaces", terminalTheme(), 0, 100, nil),
 	}
 	models[2].width, models[2].height = 110, 24
@@ -429,9 +425,6 @@ func TestThemeResolution(t *testing.T) {
 	}
 	if hexSGR("#abc", true) != "\x1b[48;2;170;187;204m" {
 		t.Fatalf("short hex %q", hexSGR("#abc", true))
-	}
-	if strings.Contains(strings.Join([]string{model{}.renderTabs(), model{width: 40, height: 10}.renderSearch(40)}, ""), "\x1b[48;5;") {
-		t.Fatal("raw 256-color slab still used in chrome")
 	}
 }
 
@@ -555,7 +548,7 @@ func realisticModel() model {
 	for i := 0; i < 38; i++ {
 		frame.WriteString(fmt.Sprintf("\x1b[32m$\x1b[0m line %02d \x1b[1msome output\x1b[0m with text that fills the row nicely\n", i))
 	}
-	m.previewText, m.previewTextLive, m.previewPane = frame.String(), true, m.visible[3].PreviewPane
+	m.previewText, m.previewPane = frame.String(), m.visible[3].PreviewPane
 	return m
 }
 

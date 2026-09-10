@@ -51,6 +51,25 @@ func SpaceDefinitionsDir() string {
 	return filepath.Join(ConfigDir(), "spaces")
 }
 
+// SessionName is the Herdr session hseh runs in: HERDR_SESSION, else the
+// /sessions/<name>/ segment of the socket path, else "default".
+func SessionName() string {
+	if name := os.Getenv("HERDR_SESSION"); name != "" {
+		return name
+	}
+	const marker = "/sessions/"
+	socket := SocketPath()
+	if index := strings.Index(socket, marker); index >= 0 {
+		rest := socket[index+len(marker):]
+		if slash := strings.Index(rest, "/"); slash > 0 {
+			return rest[:slash]
+		}
+	}
+	return "default"
+}
+
+// sessionNamespaceKey names the per-session state subdirectory. Without
+// HERDR_SESSION the whole socket path is used so unrelated sessions never share state.
 func sessionNamespaceKey() string {
 	if name := os.Getenv("HERDR_SESSION"); name != "" {
 		return sanitizeSessionKey(name)
@@ -92,20 +111,10 @@ func HerdrConfigPath() string {
 	if path := os.Getenv("HERDR_CONFIG_PATH"); path != "" {
 		return path
 	}
-	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
-		return filepath.Join(dir, "herdr", "config.toml")
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	return filepath.Join(home, ".config", "herdr", "config.toml")
+	return filepath.Join(xdgConfigHome(), "herdr", "config.toml")
 }
 
-// SocketPath is the current session socket. HERDR_SOCKET_PATH wins.
+// SocketPath is the current session's API socket, handed to plugin processes as HERDR_SOCKET_PATH.
 func SocketPath() string {
-	if path := os.Getenv("HERDR_SOCKET_PATH"); path != "" {
-		return path
-	}
-	return ""
+	return os.Getenv("HERDR_SOCKET_PATH")
 }

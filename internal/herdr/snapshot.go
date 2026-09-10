@@ -2,31 +2,22 @@ package herdr
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/regutierrez/hseh/internal/config"
-	"github.com/regutierrez/hseh/internal/gitinfo"
 )
 
 // AgentSession is a native conversation reference, not a live occupant id.
 type AgentSession struct {
-	Source string `json:"source"`
-	Agent  string `json:"agent"`
-	Kind   string `json:"kind"`
-	Value  string `json:"value"`
+	Value string `json:"value"`
 }
 
 // WorkspaceRow is one live workspace from session.snapshot.
 type WorkspaceRow struct {
 	WorkspaceID string            `json:"workspace_id"`
-	Number      int               `json:"number"`
 	Label       string            `json:"label"`
 	Focused     bool              `json:"focused"`
-	PaneCount   int               `json:"pane_count"`
-	TabCount    int               `json:"tab_count"`
 	ActiveTabID string            `json:"active_tab_id"`
 	AgentStatus string            `json:"agent_status"`
 	Tokens      map[string]string `json:"tokens"`
@@ -36,25 +27,18 @@ type WorkspaceRow struct {
 // Worktree is optional Git checkout provenance on a workspace.
 type Worktree struct {
 	CheckoutPath string `json:"checkout_path"`
-	RepoName     string `json:"repo_name"`
-	RepoRoot     string `json:"repo_root"`
 }
 
 // TabRow is one live tab from session.snapshot.
 type TabRow struct {
 	TabID       string `json:"tab_id"`
-	WorkspaceID string `json:"workspace_id"`
-	Number      int    `json:"number"`
 	Label       string `json:"label"`
-	Focused     bool   `json:"focused"`
-	PaneCount   int    `json:"pane_count"`
 	AgentStatus string `json:"agent_status"`
 }
 
 // PaneRow is one live pane from session.snapshot.
 type PaneRow struct {
 	PaneID        string            `json:"pane_id"`
-	TerminalID    string            `json:"terminal_id"`
 	WorkspaceID   string            `json:"workspace_id"`
 	TabID         string            `json:"tab_id"`
 	Focused       bool              `json:"focused"`
@@ -89,17 +73,14 @@ type PaneLayout struct {
 
 // SessionSnapshot is the live session.snapshot body.
 type SessionSnapshot struct {
-	GitByDirectory     map[string]gitinfo.WorkspaceGit `json:"-"`
-	Version            string                          `json:"version"`
-	Protocol           uint32                          `json:"protocol"`
-	FocusedWorkspaceID string                          `json:"focused_workspace_id"`
-	FocusedTabID       string                          `json:"focused_tab_id"`
-	FocusedPaneID      string                          `json:"focused_pane_id"`
-	Workspaces         []WorkspaceRow                  `json:"workspaces"`
-	Tabs               []TabRow                        `json:"tabs"`
-	Panes              []PaneRow                       `json:"panes"`
-	Layouts            []PaneLayout                    `json:"layouts"`
-	Agents             []AgentRow                      `json:"agents"`
+	Version            string         `json:"version"`
+	FocusedWorkspaceID string         `json:"focused_workspace_id"`
+	FocusedPaneID      string         `json:"focused_pane_id"`
+	Workspaces         []WorkspaceRow `json:"workspaces"`
+	Tabs               []TabRow       `json:"tabs"`
+	Panes              []PaneRow      `json:"panes"`
+	Layouts            []PaneLayout   `json:"layouts"`
+	Agents             []AgentRow     `json:"agents"`
 }
 
 type SnapshotEnvelope struct {
@@ -107,7 +88,7 @@ type SnapshotEnvelope struct {
 	Snapshot *SessionSnapshot `json:"snapshot"`
 }
 
-// LoadSessionSnapshot loads session.snapshot (Herdr 0.9.0 shape only).
+// LoadSessionSnapshot loads session.snapshot.
 func LoadSessionSnapshot() (SessionSnapshot, ContinuityWitness, error) {
 	return LoadSessionSnapshotContext(context.Background())
 }
@@ -124,14 +105,9 @@ func LoadSessionSnapshotContext(ctx context.Context) (SessionSnapshot, Continuit
 	return *envelope.Snapshot, witness, nil
 }
 
-// FocusWorkspace focuses a live workspace.
-func FocusWorkspace(workspaceID string) error {
-	return FocusWorkspaceContext(context.Background(), workspaceID)
-}
-
+// FocusWorkspaceContext focuses a live workspace.
 func FocusWorkspaceContext(ctx context.Context, workspaceID string) error {
-	var result json.RawMessage
-	_, err := CallContext(ctx, "workspace.focus", map[string]any{"workspace_id": workspaceID}, &result)
+	_, err := CallContext(ctx, "workspace.focus", map[string]any{"workspace_id": workspaceID}, nil)
 	return err
 }
 
@@ -140,11 +116,7 @@ type AgentFocusEnvelope struct {
 	Agent *AgentRow `json:"agent"`
 }
 
-// FocusAgent focuses a live agent pane, then syncs the hosted tab from the returned agent_info.
-func FocusAgent(paneID string) error {
-	return FocusAgentContext(context.Background(), paneID)
-}
-
+// FocusAgentContext focuses a live agent pane, then syncs the hosted tab from the returned agent_info.
 func FocusAgentContext(ctx context.Context, paneID string) error {
 	var envelope AgentFocusEnvelope
 	_, err := CallContext(ctx, "agent.focus", map[string]any{"target": paneID}, &envelope)
@@ -154,19 +126,14 @@ func FocusAgentContext(ctx context.Context, paneID string) error {
 	if envelope.Agent == nil || envelope.Agent.TabID == "" {
 		return fmt.Errorf("hseh focus: agent.focus missing tab_id")
 	}
-	var result json.RawMessage
-	_, err = CallContext(ctx, "tab.focus", map[string]any{"tab_id": envelope.Agent.TabID}, &result)
+	_, err = CallContext(ctx, "tab.focus", map[string]any{"tab_id": envelope.Agent.TabID}, nil)
 	return err
 }
 
 // PaneReadResult is socket pane.read text plus revision.
 type PaneReadResult struct {
-	PaneID    string `json:"pane_id"`
-	Text      string `json:"text"`
-	Revision  uint64 `json:"revision"`
-	Truncated bool   `json:"truncated"`
-	Format    string `json:"format"`
-	Source    string `json:"source"`
+	Text     string `json:"text"`
+	Revision uint64 `json:"revision"`
 }
 
 type PaneReadEnvelope struct {
@@ -174,11 +141,7 @@ type PaneReadEnvelope struct {
 	Read *PaneReadResult `json:"read"`
 }
 
-// ReadPaneVisibleANSI reads the visible viewport without focusing the pane.
-func ReadPaneVisibleANSI(paneID string) (PaneReadResult, ContinuityWitness, error) {
-	return ReadPaneVisibleANSIContext(context.Background(), paneID)
-}
-
+// ReadPaneVisibleANSIContext reads the visible viewport without focusing the pane.
 func ReadPaneVisibleANSIContext(ctx context.Context, paneID string) (PaneReadResult, ContinuityWitness, error) {
 	var envelope PaneReadEnvelope
 	params := map[string]any{
@@ -206,14 +169,14 @@ type pluginPaneOpenEnvelope struct {
 // here: the popup itself reports them in its footer.
 func OpenPluginPopup(view string) error {
 	pluginID := config.PluginID()
-	width, height, _ := config.LoadPopupSize()
+	settings, _ := config.Load()
 	var envelope pluginPaneOpenEnvelope
 	_, err := CallContext(WithHedge(context.Background()), "plugin.pane.open", map[string]any{
 		"plugin_id":  pluginID,
 		"entrypoint": view,
 		"placement":  "popup",
-		"width":      width.Param(),
-		"height":     height.Param(),
+		"width":      settings.PopupWidth.Param(),
+		"height":     settings.PopupHeight.Param(),
 		"focus":      true,
 	}, &envelope)
 	if err != nil {
@@ -230,8 +193,8 @@ func OpenPluginPopup(view string) error {
 	return nil
 }
 
-// ActiveWorkspacePaneID returns the active pane in a workspace's active tab.
-func ActiveWorkspacePaneID(snapshot SessionSnapshot, workspaceID string) string {
+// activeWorkspacePaneID returns the active pane in a workspace's active tab.
+func activeWorkspacePaneID(snapshot SessionSnapshot, workspaceID string) string {
 	activeTabID := ""
 	for _, workspace := range snapshot.Workspaces {
 		if workspace.WorkspaceID == workspaceID {
@@ -269,7 +232,7 @@ func TabByID(snapshot SessionSnapshot, tabID string) (TabRow, bool) {
 }
 
 func ActiveWorkspaceDirectory(snapshot SessionSnapshot, workspaceID string) string {
-	paneID := ActiveWorkspacePaneID(snapshot, workspaceID)
+	paneID := activeWorkspacePaneID(snapshot, workspaceID)
 	for _, pane := range snapshot.Panes {
 		if pane.PaneID == paneID {
 			if strings.TrimSpace(pane.ForegroundCwd) != "" {
@@ -279,18 +242,4 @@ func ActiveWorkspaceDirectory(snapshot SessionSnapshot, workspaceID string) stri
 		}
 	}
 	return ""
-}
-
-func SessionName(socketPath string) string {
-	if name := os.Getenv("HERDR_SESSION"); name != "" {
-		return name
-	}
-	const marker = "/sessions/"
-	if index := strings.Index(socketPath, marker); index >= 0 {
-		rest := socketPath[index+len(marker):]
-		if slash := strings.Index(rest, "/"); slash > 0 {
-			return rest[:slash]
-		}
-	}
-	return "default"
 }

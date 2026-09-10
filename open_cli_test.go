@@ -2,7 +2,6 @@ package main
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -19,21 +18,19 @@ func TestCompiledOpenCreatesThenFocusesWithoutRepeatingCommands(t *testing.T) {
 	hsehtest.WriteDefinition(t, config, "def-one", "one", work, "echo MARK")
 	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{Version: "0.9.0"}}
 	socket, state := hsehtest.Start(t, h)
-	run := func() []byte {
-		cmd := exec.Command(compiledHseh, "open", "def-one")
-		cmd.Env = hsehtest.Env(socket, state, config)
-		out, err := cmd.CombinedOutput()
+	run := func() string {
+		out, err := runCompiledHseh(hsehtest.Env(socket, state, config), "open", "def-one")
 		if err != nil {
 			t.Fatalf("%v\n%s", err, out)
 		}
 		return out
 	}
 	first := run()
-	if !strings.Contains(string(first), "create") {
+	if !strings.Contains(first, "create") {
 		t.Fatalf("first open: %s", first)
 	}
 	second := run()
-	if !strings.Contains(string(second), "focus") {
+	if !strings.Contains(second, "focus") {
 		t.Fatalf("second open: %s", second)
 	}
 	if len(h.Created()) != 1 {
@@ -54,13 +51,11 @@ func TestCompiledOpenAdoptsUnassociatedSameDir(t *testing.T) {
 		Panes:      []herdr.PaneRow{{PaneID: "w7:p1", WorkspaceID: "w7", Cwd: work}},
 	}}
 	socket, state := hsehtest.Start(t, h)
-	cmd := exec.Command(compiledHseh, "open", "def-adopt")
-	cmd.Env = hsehtest.Env(socket, state, config)
-	out, err := cmd.CombinedOutput()
+	out, err := runCompiledHseh(hsehtest.Env(socket, state, config), "open", "def-adopt")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	if !strings.Contains(string(out), "adopt") {
+	if !strings.Contains(out, "adopt") {
 		t.Fatalf("want adopt, got %s", out)
 	}
 	if len(h.Created()) != 0 {
@@ -76,9 +71,7 @@ func TestCompiledOpenMissingDirDoesNotCreate(t *testing.T) {
 	hsehtest.WriteDefinition(t, config, "def-missing", "missing", filepath.Join(t.TempDir(), "nope"), "echo X")
 	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{Version: "0.9.0"}}
 	socket, state := hsehtest.Start(t, h)
-	cmd := exec.Command(compiledHseh, "open", "def-missing")
-	cmd.Env = hsehtest.Env(socket, state, config)
-	out, err := cmd.CombinedOutput()
+	out, err := runCompiledHseh(hsehtest.Env(socket, state, config), "open", "def-missing")
 	if err == nil {
 		t.Fatalf("expected error, got %s", out)
 	}
@@ -96,32 +89,25 @@ func TestCompiledOpenRetainsWorkspaceWhenTabCreateFails(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := t.TempDir()
-	dir := filepath.Join(config, "spaces")
-	os.MkdirAll(dir, 0o700)
-	body := "id = \"def-partial\"\nname = \"partial\"\nworking_dir = \"" + work + "\"\n" +
-		"[[tabs]]\nname = \"root\"\n" +
-		"[[tabs]]\nname = \"web\"\nworking_dir = \"web\"\ncommand = \"echo SECOND\"\n"
-	os.WriteFile(filepath.Join(dir, "partial.toml"), []byte(body), 0o600)
+	hsehtest.WriteDefinitionTOML(t, config, "partial", "id = \"def-partial\"\nname = \"partial\"\nworking_dir = \""+work+"\"\n"+
+		"[[tabs]]\nname = \"root\"\n"+
+		"[[tabs]]\nname = \"web\"\nworking_dir = \"web\"\ncommand = \"echo SECOND\"\n")
 	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{Version: "0.9.0"}, FailMethod: "tab.create"}
 	socket, state := hsehtest.Start(t, h)
-	cmd := exec.Command(compiledHseh, "open", "def-partial")
-	cmd.Env = hsehtest.Env(socket, state, config)
-	out, err := cmd.CombinedOutput()
+	out, err := runCompiledHseh(hsehtest.Env(socket, state, config), "open", "def-partial")
 	if err == nil {
 		t.Fatalf("expected tab.create failure, got %s", out)
 	}
-	if !strings.Contains(string(out), "tab.create") {
+	if !strings.Contains(out, "tab.create") {
 		t.Fatalf("error should name failed step: %s", out)
 	}
 	if len(h.Created()) != 1 {
 		t.Fatalf("expected retained workspace, created %v", h.Created())
 	}
-	payload, err := os.ReadFile(filepath.Join(state, "hseh-test", "associations.json"))
-	if err != nil {
-		t.Fatalf("association missing after partial create: %v", err)
-	}
-	if !strings.Contains(string(payload), h.Created()[0]) {
-		t.Fatalf("association does not retain workspace: %s", payload)
+	useHsehTestSession(t, state)
+	stored := readSpaceAssociationFile(t, state)
+	if len(stored.Records) != 1 || stored.Records[0].WorkspaceID != h.Created()[0] {
+		t.Fatalf("association does not retain workspace: %+v", stored.Records)
 	}
 }
 
@@ -137,9 +123,7 @@ func TestCompiledOpenConcurrentCreatesOnce(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		go func(i int) {
 			defer wg.Done()
-			cmd := exec.Command(compiledHseh, "open", "def-race")
-			cmd.Env = hsehtest.Env(socket, state, config)
-			out, err := cmd.CombinedOutput()
+			out, err := runCompiledHseh(hsehtest.Env(socket, state, config), "open", "def-race")
 			if err != nil {
 				errs[i] = err
 				t.Errorf("%v\n%s", err, out)
@@ -163,9 +147,7 @@ func TestCompiledOpenDistinctDefinitionsSameDir(t *testing.T) {
 	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{Version: "0.9.0"}}
 	socket, state := hsehtest.Start(t, h)
 	for _, id := range []string{"def-a", "def-b"} {
-		cmd := exec.Command(compiledHseh, "open", id)
-		cmd.Env = hsehtest.Env(socket, state, config)
-		out, err := cmd.CombinedOutput()
+		out, err := runCompiledHseh(hsehtest.Env(socket, state, config), "open", id)
 		if err != nil {
 			t.Fatalf("%s: %v\n%s", id, err, out)
 		}
@@ -184,8 +166,7 @@ func TestCompiledOpenStopsOnMismatchedAssociationWitness(t *testing.T) {
 	hsehtest.WriteDefinition(t, config, "def-restart", "restart", work, "echo NO")
 	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{Version: "0.9.0"}}
 	socket, state := hsehtest.Start(t, h)
-	t.Setenv("HERDR_SESSION", "hseh-test")
-	t.Setenv("HERDR_PLUGIN_STATE_DIR", state)
+	useHsehTestSession(t, state)
 	stale := space.AssociationState{
 		Witness: herdr.ContinuityWitness{SocketPath: socket, PeerPID: 999999, PeerStartTime: "1", BootTime: "1"},
 		Records: []space.AssociationRecord{{DefinitionID: "def-restart", ResolvedDir: work, WorkspaceID: "w9"}},
@@ -193,16 +174,14 @@ func TestCompiledOpenStopsOnMismatchedAssociationWitness(t *testing.T) {
 	if err := space.WriteAssociationFile(state, stale); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(compiledHseh, "open", "def-restart")
-	cmd.Env = hsehtest.Env(socket, state, config)
-	out, err := cmd.CombinedOutput()
+	out, err := runCompiledHseh(hsehtest.Env(socket, state, config), "open", "def-restart")
 	if err == nil {
 		t.Fatalf("expected unresolved restart, got %s", out)
 	}
-	if !strings.Contains(string(out), "needs recovery after Herdr restart") {
+	if !strings.Contains(out, "needs recovery after Herdr restart") {
 		t.Fatalf("got %s", out)
 	}
-	if !strings.Contains(string(out), "hseh recover def-restart --workspace <live-workspace-id>") || !strings.Contains(string(out), "hseh recover def-restart --create") {
+	if !strings.Contains(out, "hseh recover def-restart --workspace <live-workspace-id>") || !strings.Contains(out, "hseh recover def-restart --create") {
 		t.Fatalf("missing recovery commands: %s", out)
 	}
 	for _, method := range h.Methods() {
@@ -218,17 +197,19 @@ func TestCompiledOpenCorruptAssociationDoesNotCreate(t *testing.T) {
 	hsehtest.WriteDefinition(t, config, "def-corrupt", "corrupt", work, "echo NO")
 	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{Version: "0.9.0"}}
 	socket, state := hsehtest.Start(t, h)
-	os.MkdirAll(filepath.Join(state, "hseh-test"), 0o700)
-	if err := os.WriteFile(filepath.Join(state, "hseh-test", "associations.json"), []byte("{"), 0o600); err != nil {
+	useHsehTestSession(t, state)
+	path := space.AssociationFilePath(state)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(compiledHseh, "open", "def-corrupt")
-	cmd.Env = hsehtest.Env(socket, state, config)
-	out, err := cmd.CombinedOutput()
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runCompiledHseh(hsehtest.Env(socket, state, config), "open", "def-corrupt")
 	if err == nil {
 		t.Fatalf("expected corrupt error, got %s", out)
 	}
-	if !strings.Contains(string(out), "corrupt") {
+	if !strings.Contains(out, "corrupt") {
 		t.Fatalf("got %s", out)
 	}
 	if len(h.Created()) != 0 {

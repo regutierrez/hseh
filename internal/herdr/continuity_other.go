@@ -7,7 +7,6 @@ import (
 	"net"
 )
 
-func readContinuityWitnessFromUnixConn(unixConn *net.UnixConn) (ContinuityWitness, error) {
-	_ = unixConn
+func readContinuityWitnessFromUnixConn(*net.UnixConn) (ContinuityWitness, error) {
 	return ContinuityWitness{}, fmt.Errorf("hseh history: continuity witness is only implemented on Linux")
 }

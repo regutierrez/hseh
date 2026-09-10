@@ -53,13 +53,10 @@ func TestSelectedBlockHasRailAndBoldLabelNotBackground(t *testing.T) {
 	if selected != 2 || other == 0 {
 		t.Fatalf("expected both blocks, ids=%v", layout.ItemIDs)
 	}
-	if strings.Contains(termtext.StripControls(strings.Join(layout.Lines, "\n")), "> ") {
-		t.Fatal("old pointer remains")
-	}
 }
 
 func TestLivePreviewCropsGridToBottomWithoutReflow(t *testing.T) {
-	m := model{previewPane: "w1:p1", previewTextLive: true, previewText: "TOP" + strings.Repeat(" ", 77) + "\nMIDDLE" + strings.Repeat(" ", 74) + "\nLAST" + strings.Repeat(" ", 76) + "\n"}
+	m := model{previewPane: "w1:p1", previewText: "TOP" + strings.Repeat(" ", 77) + "\nMIDDLE" + strings.Repeat(" ", 74) + "\nLAST" + strings.Repeat(" ", 76) + "\n"}
 	got := termtext.StripControls(m.renderPreview(12, 2))
 	lines := strings.Split(got, "\n")
 	if len(lines) != 2 || !strings.HasPrefix(lines[0], "MIDDLE") || !strings.HasPrefix(lines[1], "LAST") {
@@ -68,7 +65,7 @@ func TestLivePreviewCropsGridToBottomWithoutReflow(t *testing.T) {
 }
 
 func TestLivePreviewPreservesSGRAcrossClippedRows(t *testing.T) {
-	m := model{previewPane: "w1:p1", previewTextLive: true, previewText: "\x1b[31mTOP\n中文LAST\n"}
+	m := model{previewPane: "w1:p1", previewText: "\x1b[31mTOP\n中文LAST\n"}
 	got := m.renderPreview(6, 1)
 	if !strings.Contains(got, "\x1b[31m") || ansi.StringWidth(got) != 6 || !strings.HasSuffix(got, "\x1b[0m") {
 		t.Fatalf("style/cell boundary broken: %q", got)
@@ -78,8 +75,8 @@ func TestLivePreviewPreservesSGRAcrossClippedRows(t *testing.T) {
 	}
 }
 
-func TestDefinitionPreviewStillStartsAtTop(t *testing.T) {
-	m := model{previewText: "definition\nfirst tab\nlast tab"}
+func TestListingPreviewStartsAtTop(t *testing.T) {
+	m := model{previewListing: true, previewText: "definition\nfirst tab\nlast tab"}
 	if got := termtext.StripControls(m.renderPreview(12, 2)); !strings.Contains(got, "definition") || strings.Contains(got, "last tab") {
 		t.Fatalf("definition was tail-cropped: %q", got)
 	}
@@ -96,16 +93,13 @@ func TestViewTabsTrackKeyboardCycle(t *testing.T) {
 				t.Fatalf("tab missing %s: %q", label, got)
 			}
 		}
-		if strings.Contains(plain, " All") {
-			t.Fatalf("All tab still present: %q", got)
-		}
 		if !strings.Contains(got, m.th().TabActive+" "+want+" ") {
 			t.Fatalf("active tab not %s: %q", want, got)
 		}
 		if m.itemIDAtMouse(0, 0) != "" {
 			t.Fatal("tab row is clickable result")
 		}
-		for y := m.height - m.searchPaneHeight(); y < m.height; y++ {
+		for y := m.height - m.frame().searchH; y < m.height; y++ {
 			if m.itemIDAtMouse(0, y) != "" {
 				t.Fatal("search row is clickable result")
 			}

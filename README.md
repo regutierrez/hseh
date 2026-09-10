@@ -48,8 +48,9 @@ nothing outside this module can import it:
 | `internal/picker` | bubble tea ui: items, rendering, theme, sidebar, definition rows |
 | `internal/hsehtest` | fake herdr socket server and fixtures for tests |
 
-`commands.go` next to `main.go` holds the thin cli command bodies; the
-`*_cli_test.go` files there drive the compiled binary end to end.
+`commands.go` next to `main.go` holds the thin cli command bodies; the root
+`*_test.go` files build the binary once and drive it end to end against
+`internal/hsehtest`'s fake herdr socket.
 
 ## config
 

@@ -14,7 +14,7 @@ func TestRenderListKeepsSelectedLastRowVisible(t *testing.T) {
 	}
 	items = append(items, Item{ID: "last", Rows: []string{"SELECTED_LAST", "tail"}})
 	m := model{selectedID: "last", visible: items}
-	got := m.renderList(20, 4)
+	got := strings.Join(m.buildListLayout(20, 4).Lines, "\n")
 	if !strings.Contains(got, "SELECTED_LAST") {
 		t.Fatalf("got %q", got)
 	}
@@ -26,17 +26,6 @@ func TestWrapDisplayLineUsesCellWidth(t *testing.T) {
 		if w := lipgloss.Width(line); w > 4 {
 			t.Fatalf("line %q width %d", line, w)
 		}
-	}
-}
-
-func TestClipBlockCapsPreviewHeight(t *testing.T) {
-	var b strings.Builder
-	for i := 0; i < 50; i++ {
-		b.WriteString("line\n")
-	}
-	got := clipBlock(b.String(), 10, 3)
-	if strings.Count(got, "\n") > 2 {
-		t.Fatalf("preview overflow: %q", got)
 	}
 }
 

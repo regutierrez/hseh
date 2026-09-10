@@ -1,25 +1,33 @@
 package herdr
 
-type pluginEventPayload struct {
-	Type           string
-	Event          string
-	WorkspaceID    string
-	PaneID         string
-	PreviousPaneID string
-	Agent          string
-	Released       bool
+import "testing"
+
+func TestParsePluginEventJSONPreservesLifecycleData(t *testing.T) {
+	data, err := ParsePluginEventJSON(`{"event":"pane_agent_detected","data":{"type":"pane_agent_detected","pane_id":"w1:p1","workspace_id":"w1","agent":"pi","released":true}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data.Agent != "pi" || !data.Released || PluginEventPaneID(data) != "w1:p1" {
+		t.Fatalf("real envelope loses lifecycle data: %+v", data)
+	}
+	nested, err := ParsePluginEventJSON(`{"event":"pane_moved","data":{"previous_pane_id":"w1:p1","pane":{"pane_id":"w2:p9"}}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if PluginEventPaneID(nested) != "w2:p9" || nested.PreviousPaneID != "w1:p1" {
+		t.Fatalf("nested pane id lost: %+v", nested)
+	}
 }
 
-func (p *pluginEventPayload) UnmarshalJSON(b []byte) error {
-	_, data, err := ParsePluginEventJSON(string(b))
-	if err != nil {
-		return err
+func TestSameContinuityWitnessRequiresPidAndStartTime(t *testing.T) {
+	stored := ContinuityWitness{SocketPath: "/tmp/a", PeerPID: 1, PeerStartTime: "1"}
+	if !SameContinuityWitness(stored, stored) {
+		t.Fatal("identical witness must match")
 	}
-	p.Type = data.Type
-	p.WorkspaceID = data.WorkspaceID
-	p.PaneID = PluginEventPaneID(data)
-	p.PreviousPaneID = data.PreviousPaneID
-	p.Agent = data.Agent
-	p.Released = data.Released
-	return nil
+	if SameContinuityWitness(ContinuityWitness{SocketPath: "/tmp/a"}, ContinuityWitness{SocketPath: "/tmp/a"}) {
+		t.Fatal("socket path alone must not prove continuity")
+	}
+	if SameContinuityWitness(stored, ContinuityWitness{SocketPath: "/tmp/a", PeerPID: 1, PeerStartTime: "2"}) {
+		t.Fatal("restarted peer must not match")
+	}
 }

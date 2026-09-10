@@ -25,7 +25,8 @@ type AssociationState struct {
 	Unresolved []AssociationRecord     `json:"unresolved"`
 }
 
-func associationStatePath(stateDir string) string {
+// AssociationFilePath is where a session's associations are persisted.
+func AssociationFilePath(stateDir string) string {
 	return filepath.Join(config.SessionHistoryDir(stateDir), "associations.json")
 }
 
@@ -38,7 +39,7 @@ func AssociationIdentityKey(definitionID, resolvedDir string) string {
 }
 
 func LoadAssociationFile(stateDir string) (AssociationState, error) {
-	payload, err := os.ReadFile(associationStatePath(stateDir))
+	payload, err := os.ReadFile(AssociationFilePath(stateDir))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return AssociationState{}, nil
@@ -48,12 +49,6 @@ func LoadAssociationFile(stateDir string) (AssociationState, error) {
 	var state AssociationState
 	if err := json.Unmarshal(payload, &state); err != nil {
 		return AssociationState{}, fmt.Errorf("hseh association: corrupt state: %w", err)
-	}
-	if state.Records == nil {
-		state.Records = []AssociationRecord{}
-	}
-	if state.Unresolved == nil {
-		state.Unresolved = []AssociationRecord{}
 	}
 	return state, nil
 }
@@ -71,56 +66,51 @@ func WriteAssociationFile(stateDir string, state AssociationState) error {
 	if err := os.WriteFile(temporaryPath, append(payload, '\n'), 0o600); err != nil {
 		return fmt.Errorf("hseh association: write: %w", err)
 	}
-	if err := os.Rename(temporaryPath, associationStatePath(stateDir)); err != nil {
+	if err := os.Rename(temporaryPath, AssociationFilePath(stateDir)); err != nil {
 		_ = os.Remove(temporaryPath)
 		return fmt.Errorf("hseh association: rename: %w", err)
 	}
 	return nil
 }
 
-func associationWitnessEmpty(witness herdr.ContinuityWitness) bool {
-	return witness.PeerPID == 0 && witness.PeerStartTime == ""
-}
-
 func associationWitnessMismatch(state AssociationState, live herdr.ContinuityWitness) bool {
-	if associationWitnessEmpty(state.Witness) && len(state.Records) == 0 {
+	fresh := state.Witness.PeerPID == 0 && state.Witness.PeerStartTime == "" && len(state.Records) == 0
+	if fresh {
 		return false
 	}
 	return !herdr.SameContinuityWitness(state.Witness, live)
 }
 
-func appendUnresolvedAssociation(state AssociationState, record AssociationRecord) AssociationState {
-	key := AssociationIdentityKey(record.DefinitionID, record.ResolvedDir)
-	for _, existing := range state.Unresolved {
-		if AssociationIdentityKey(existing.DefinitionID, existing.ResolvedDir) == key {
-			return state
-		}
-	}
-	state.Unresolved = append(state.Unresolved, record)
-	return state
+// sameIdentity reports whether two records name the same definition id + resolved dir.
+func sameIdentity(a, b AssociationRecord) bool {
+	return a.DefinitionID == b.DefinitionID && a.ResolvedDir == b.ResolvedDir
 }
 
-func removeUnresolvedAssociation(state AssociationState, definitionID, resolvedDir string) AssociationState {
-	key := AssociationIdentityKey(definitionID, resolvedDir)
-	kept := []AssociationRecord{}
+func hasUnresolvedAssociation(state AssociationState, identity AssociationRecord) bool {
 	for _, record := range state.Unresolved {
-		if AssociationIdentityKey(record.DefinitionID, record.ResolvedDir) == key {
-			continue
-		}
-		kept = append(kept, record)
-	}
-	state.Unresolved = kept
-	return state
-}
-
-func identityHasUnresolvedAssociation(state AssociationState, definitionID, resolvedDir string) bool {
-	key := AssociationIdentityKey(definitionID, resolvedDir)
-	for _, record := range state.Unresolved {
-		if AssociationIdentityKey(record.DefinitionID, record.ResolvedDir) == key {
+		if sameIdentity(record, identity) {
 			return true
 		}
 	}
 	return false
+}
+
+func appendUnresolvedAssociation(state AssociationState, record AssociationRecord) AssociationState {
+	if !hasUnresolvedAssociation(state, record) {
+		state.Unresolved = append(state.Unresolved, record)
+	}
+	return state
+}
+
+func removeUnresolvedAssociation(state AssociationState, identity AssociationRecord) AssociationState {
+	kept := []AssociationRecord{}
+	for _, record := range state.Unresolved {
+		if !sameIdentity(record, identity) {
+			kept = append(kept, record)
+		}
+	}
+	state.Unresolved = kept
+	return state
 }
 
 // ReconcileAssociationState folds mismatched current records into unresolved in memory.
@@ -152,6 +142,10 @@ func LoadReconciledAssociationState(stateDir string, live herdr.ContinuityWitnes
 	return ReconcileAssociationState(state, live), nil
 }
 
+// RecoverUsage is the `hseh recover` argument contract, shared by the CLI parser and Recover.
+const RecoverUsage = "exactly one of --workspace <live-workspace-id> or --create is required"
+
+// RecoveryHintLines is the tag plus the exact commands that resolve a stale identity.
 func RecoveryHintLines(definitionID string) []string {
 	return []string{
 		"recovery needed",
@@ -161,13 +155,14 @@ func RecoveryHintLines(definitionID string) []string {
 }
 
 func recoveryNeededError(definitionID string) error {
-	return fmt.Errorf("hseh open: definition %s needs recovery after Herdr restart; use `hseh recover %s --workspace <live-workspace-id>` or `hseh recover %s --create`", definitionID, definitionID, definitionID)
+	hints := RecoveryHintLines(definitionID)
+	return fmt.Errorf("hseh open: definition %s needs recovery after Herdr restart; use `%s` or `%s`", definitionID, hints[1], hints[2])
 }
 
 func upsertAssociation(state AssociationState, record AssociationRecord) AssociationState {
 	replaced := false
 	for i, existing := range state.Records {
-		if existing.DefinitionID == record.DefinitionID && existing.ResolvedDir == record.ResolvedDir {
+		if sameIdentity(existing, record) {
 			state.Records[i] = record
 			replaced = true
 			break
@@ -189,23 +184,19 @@ func liveWorkspaceIDs(snapshot herdr.SessionSnapshot) map[string]bool {
 	return live
 }
 
-func workspaceAssociatedToOtherDefinition(state AssociationState, workspaceID, definitionID, resolvedDir string) bool {
+func workspaceAssociatedToOtherDefinition(state AssociationState, workspaceID string, identity AssociationRecord) bool {
 	for _, record := range state.Records {
-		if record.WorkspaceID != workspaceID {
-			continue
+		if record.WorkspaceID == workspaceID && !sameIdentity(record, identity) {
+			return true
 		}
-		if record.DefinitionID == definitionID && record.ResolvedDir == resolvedDir {
-			continue
-		}
-		return true
 	}
 	return false
 }
 
-func exactLiveAssociation(state AssociationState, snapshot herdr.SessionSnapshot, definitionID, resolvedDir string) (string, bool) {
+func exactLiveAssociation(state AssociationState, snapshot herdr.SessionSnapshot, identity AssociationRecord) (string, bool) {
 	live := liveWorkspaceIDs(snapshot)
 	for _, record := range state.Records {
-		if record.DefinitionID == definitionID && record.ResolvedDir == resolvedDir && live[record.WorkspaceID] {
+		if sameIdentity(record, identity) && live[record.WorkspaceID] {
 			return record.WorkspaceID, true
 		}
 	}

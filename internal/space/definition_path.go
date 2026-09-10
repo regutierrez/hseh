@@ -74,6 +74,8 @@ func (p DefinitionPane) splitRatio() float64 {
 	return 1 - p.Ratio
 }
 
+// canonicalizeDirPath is the one path identity rule: absolute, symlinks resolved when the
+// path exists, cleaned otherwise.
 func canonicalizeDirPath(path string) (string, error) {
 	if strings.TrimSpace(path) == "" {
 		return "", fmt.Errorf("directory is empty")
@@ -122,9 +124,4 @@ func resolvePaneDirs(root string, tabs []DefinitionTab) ([][]string, error) {
 		}
 	}
 	return dirs, nil
-}
-
-func checkTabDirs(root string, tabs []DefinitionTab) error {
-	_, err := resolvePaneDirs(root, tabs)
-	return err
 }

@@ -65,7 +65,6 @@ type frameSpec struct {
 	listY, listW, listH                    int
 	searchY, searchW, searchH              int
 	dividerX                               int
-	stackDividerY                          int
 	previewX, previewY, previewW, previewH int
 	footerY                                int
 }
@@ -115,9 +114,8 @@ func (m model) frame() frameSpec {
 			f.mode = previewStacked
 			f.listH = listH
 			f.searchY = tabRows + listH
-			f.stackDividerY = f.searchY + search
 			f.previewX = 0
-			f.previewY = f.stackDividerY + 1
+			f.previewY = f.searchY + search + 1 // one rule row between search box and preview
 			f.previewW = width
 			f.previewH = previewH
 		}
@@ -153,21 +151,8 @@ func (m model) renderTabs() string {
 	return padDisplayWidth(strings.Join(tabs, " "), m.width) + "\x1b[0m"
 }
 
-// searchPaneHeight is the rows occupied by the rounded search box, clipped to the terminal.
-func (m model) searchPaneHeight() int {
-	return m.frame().searchH
-}
-
-func (m model) footerHeight() int {
-	if m.frame().footerY < 0 {
-		return 0
-	}
-	return footerRows
-}
-
 // renderSearch draws the rounded search box: Search title, prompt, caret, and matched/total count.
-func (m model) renderSearch(width int) string {
-	height := m.searchPaneHeight()
+func (m model) renderSearch(width, height int) string {
 	if height < 1 {
 		return ""
 	}
@@ -273,7 +258,7 @@ func (m model) searchInputLine(width int) string {
 		wantCaret = false
 	}
 	textBudget := max(0, width-need())
-	visibleText := clipSearchText(text, textBudget, true)
+	visibleText := clipSearchTail(text, textBudget)
 	padW := max(0, width-need()-ansi.StringWidth(visibleText))
 	var b strings.Builder
 	if wantPrompt {
@@ -297,15 +282,13 @@ func (m model) searchInputLine(width int) string {
 	return padDisplayWidth(b.String(), width)
 }
 
-func clipSearchText(s string, width int, keepTail bool) string {
+// clipSearchTail keeps the end of the query visible when it outgrows the input width.
+func clipSearchTail(s string, width int) string {
 	if width < 1 || s == "" {
 		return ""
 	}
 	if ansi.StringWidth(s) <= width {
 		return s
-	}
-	if !keepTail {
-		return ansi.Truncate(s, width, "")
 	}
 	runes := []rune(s)
 	start := 0
@@ -374,14 +357,14 @@ func (m model) renderView() (out string) {
 		return tabs
 	}
 	th := m.th()
-	search := m.renderSearch(f.searchW)
+	search := m.renderSearch(f.searchW, f.searchH)
 	var lines []string
 	lines = append(lines, tabs)
 	switch f.mode {
 	case previewSide:
 		var listLines, searchLines, prevLines []string
 		if f.listH > 0 {
-			listLines = strings.Split(m.renderList(f.listW, f.listH), "\n")
+			listLines = m.buildListLayout(f.listW, f.listH).Lines
 		}
 		if f.searchH > 0 {
 			searchLines = strings.Split(search, "\n")
@@ -403,7 +386,7 @@ func (m model) renderView() (out string) {
 		}
 	default:
 		if f.listH > 0 {
-			lines = append(lines, strings.Split(m.renderList(f.listW, f.listH), "\n")...)
+			lines = append(lines, m.buildListLayout(f.listW, f.listH).Lines...)
 		}
 		if f.searchH > 0 {
 			lines = append(lines, strings.Split(search, "\n")...)
@@ -422,23 +405,6 @@ func (m model) renderView() (out string) {
 type listLayout struct {
 	Lines   []string
 	ItemIDs []string
-}
-
-func (m model) listPaneWidth() int {
-	return m.frame().listW
-}
-
-func (m model) bodyHeight() int {
-	return max(1, m.frame().listH)
-}
-
-func (m model) previewBodyHeight() int {
-	return max(1, m.frame().previewH)
-}
-
-func (m model) renderList(width, height int) string {
-	layout := m.buildListLayout(width, height)
-	return strings.Join(layout.Lines, "\n")
 }
 
 func (m model) emptyListCopy() string {
@@ -464,9 +430,6 @@ func (m model) wrapItemBlock(item Item, selected bool, contentWidth int) []strin
 		item = item.withoutPathColumn()
 	}
 	rows := highlightItemRows(item, m.query, m.th().Mauve+"\x1b[1m")
-	if len(rows) == 0 {
-		rows = []string{item.ID}
-	}
 	var lines []string
 	for i, row := range rows {
 		if selected && i == 0 {
@@ -668,19 +631,18 @@ func (m model) renderPreview(width, height int) string {
 			return clipBlock(th.Yellow+copyLoading+"\x1b[0m", width, height)
 		}
 		return clipBlock(th.Muted+copyNoPreview+"\x1b[0m", width, height)
-	case m.previewTextLive:
-		return clipLivePreview(m.previewText, width, height)
 	case m.previewListing:
 		return clipListing(m.previewText, width, height)
 	default:
-		return clipBlock(m.previewText, width, height)
+		return clipLivePreview(m.previewText, width, height)
 	}
 }
 
 // clipLivePreview preserves terminal rows and shows their bottom edge, rather than reflowing a terminal grid.
+// The text is already control-filtered by the pane reader; only SGR sequences remain.
 func clipLivePreview(text string, width, height int) string {
 	width, height = max(1, width), max(1, height)
-	lines := strings.Split(strings.TrimSuffix(termtext.KeepSGR(text), "\n"), "\n")
+	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
 	start := max(0, len(lines)-height)
 	var visible []string
 	carry := ""
@@ -821,7 +783,7 @@ func highlightVisibleRunes(line string, set map[int]bool, style string) string {
 			i++
 			continue
 		}
-		r, size := utf8.DecodeRuneInString(line[i:])
+		_, size := utf8.DecodeRuneInString(line[i:])
 		if set[index] {
 			b.WriteString(style)
 			b.WriteString(line[i : i+size])
@@ -830,7 +792,6 @@ func highlightVisibleRunes(line string, set map[int]bool, style string) string {
 		} else {
 			b.WriteString(line[i : i+size])
 		}
-		_ = r
 		index++
 		i += size
 	}

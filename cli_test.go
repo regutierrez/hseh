@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/regutierrez/hseh/internal/focus"
@@ -13,17 +15,23 @@ import (
 	"github.com/regutierrez/hseh/internal/picker"
 )
 
+// compiledHseh is the binary under test; every Compiled* test drives it end to end
+// against an hsehtest.Server, with hsehtest.Env keeping it off the developer's real config.
 var compiledHseh string
 
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "hseh-bin-")
 	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	// In-process helpers must not read the developer's real hseh.toml either.
+	os.Setenv("HERDR_PLUGIN_CONFIG_DIR", dir)
 	bin := filepath.Join(dir, "hseh")
 	cmd := exec.Command("go", "build", "-o", bin, ".")
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "build hseh:", err)
 		os.RemoveAll(dir)
 		os.Exit(1)
 	}
@@ -31,6 +39,33 @@ func TestMain(m *testing.M) {
 	code := m.Run()
 	os.RemoveAll(dir)
 	os.Exit(code)
+}
+
+func runCompiledHseh(env []string, args ...string) (string, error) {
+	cmd := exec.Command(compiledHseh, args...)
+	cmd.Env = env
+	out, err := cmd.CombinedOutput()
+	return string(out), err
+}
+
+// useHsehTestSession points in-process focus/space calls at the same session the compiled binary uses.
+func useHsehTestSession(t *testing.T, stateDir string) {
+	t.Helper()
+	t.Setenv("HERDR_SESSION", "hseh-test")
+	t.Setenv("HERDR_PLUGIN_STATE_DIR", stateDir)
+}
+
+// seedAgentHistory writes history in which pane w1:p1 hosts a pi agent with the given
+// session value and is the most recent agent target.
+func seedAgentHistory(t *testing.T, socket, stateDir, sessionValue string) {
+	t.Helper()
+	useHsehTestSession(t, stateDir)
+	history := focus.EmptyHistory(hsehtest.Witness(t, socket))
+	history = focus.ApplyVerifiedOccupantTransition(history, "w1:p1", "pi", sessionValue, false)
+	history = focus.RecordAgentPaneFocus(history, "w1:p1")
+	if err := focus.WriteFile(stateDir, history); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestCompiledCLIListJSON(t *testing.T) {
@@ -47,18 +82,12 @@ func TestCompiledCLIListJSON(t *testing.T) {
 		},
 	}
 	socketPath, stateDir := hsehtest.Start(t, &hsehtest.Server{Snapshot: snapshot})
-	cmd := exec.Command(compiledHseh, "list", "--json", "--view", "spaces")
-	cmd.Env = append(os.Environ(),
-		"HERDR_SOCKET_PATH="+socketPath,
-		"HERDR_PLUGIN_STATE_DIR="+stateDir,
-		"HERDR_SESSION=hseh-test",
-	)
-	out, err := cmd.CombinedOutput()
+	out, err := runCompiledHseh(hsehtest.Env(socketPath, stateDir, t.TempDir()), "list", "--json", "--view", "spaces")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	var doc picker.ListDocument
-	if err := json.Unmarshal(out, &doc); err != nil {
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
 		t.Fatalf("json: %v\n%s", err, out)
 	}
 	if doc.View != picker.ViewSpaces || doc.Session.Name != "hseh-test" {
@@ -77,20 +106,21 @@ func TestCompiledCLIListJSON(t *testing.T) {
 	}
 }
 
-func TestCompiledCLIListRequiresJSONFlag(t *testing.T) {
-	cmd := exec.Command(compiledHseh, "list")
-	out, err := cmd.CombinedOutput()
-	if err == nil {
-		t.Fatalf("expected error, got %s", out)
+func TestCompiledCLIRejectsBadArguments(t *testing.T) {
+	env := hsehtest.Env("", t.TempDir(), t.TempDir())
+	cases := map[string][]string{
+		"--json is required":         {"list"},
+		"invalid view nope":          {"list", "--json", "--view", "nope"},
+		"invalid view all":           {"list", "--json", "--view=all"},
+		"unknown argument --yes":     {"recover", "def-a", "--create", "--yes"},
+		"repeated argument --create": {"recover", "def-a", "--create", "--create"},
+		"definition id is required":  {"open"},
+		"unknown command frob":       {"frob"},
 	}
-}
-
-func TestCompiledCLIListRejectsInvalidView(t *testing.T) {
-	for _, view := range []string{"nope", "all"} {
-		cmd := exec.Command(compiledHseh, "list", "--json", "--view", view)
-		out, err := cmd.CombinedOutput()
-		if err == nil {
-			t.Fatalf("expected error for %s, got %s", view, out)
+	for want, args := range cases {
+		out, err := runCompiledHseh(env, args...)
+		if err == nil || !strings.Contains(out, want) {
+			t.Fatalf("%v: err=%v out=%s want %q", args, err, out, want)
 		}
 	}
 }
@@ -103,15 +133,7 @@ func TestCompiledLaunchOpensPluginPopup(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(configDir, "hseh.toml"), []byte("popup_width = \"70%\"\npopup_height = 30\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(compiledHseh, "launch", "spaces")
-	cmd.Env = append(os.Environ(),
-		"HERDR_SOCKET_PATH="+socketPath,
-		"HERDR_PLUGIN_STATE_DIR="+stateDir,
-		"HERDR_PLUGIN_CONFIG_DIR="+configDir,
-		"HERDR_SESSION=hseh-test",
-		"HERDR_PLUGIN_ID=hseh",
-	)
-	out, err := cmd.CombinedOutput()
+	out, err := runCompiledHseh(append(hsehtest.Env(socketPath, stateDir, configDir), "HERDR_PLUGIN_ID=hseh"), "launch", "spaces")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -135,15 +157,9 @@ func TestCompiledEventHookReleaseAndMove(t *testing.T) {
 		},
 	}
 	socketPath, stateDir := hsehtest.Start(t, &hsehtest.Server{Snapshot: snapshot})
-	env := append(os.Environ(),
-		"HERDR_SOCKET_PATH="+socketPath,
-		"HERDR_PLUGIN_STATE_DIR="+stateDir,
-		"HERDR_SESSION=hseh-test",
-	)
+	env := hsehtest.Env(socketPath, stateDir, t.TempDir())
 	run := func(event, payload string) {
-		cmd := exec.Command(compiledHseh, "event")
-		cmd.Env = append(env, "HERDR_PLUGIN_EVENT="+event, "HERDR_PLUGIN_EVENT_JSON="+payload)
-		out, err := cmd.CombinedOutput()
+		out, err := runCompiledHseh(append(env, "HERDR_PLUGIN_EVENT="+event, "HERDR_PLUGIN_EVENT_JSON="+payload), "event")
 		if err != nil {
 			t.Fatalf("%s %v\n%s", event, err, out)
 		}
@@ -161,26 +177,8 @@ func TestCompiledListDoesNotAdoptConversationWithoutMove(t *testing.T) {
 		},
 	}
 	socketPath, stateDir := hsehtest.Start(t, &hsehtest.Server{Snapshot: snapshot})
-	t.Setenv("HERDR_SOCKET_PATH", socketPath)
-	t.Setenv("HERDR_PLUGIN_STATE_DIR", stateDir)
-	t.Setenv("HERDR_SESSION", "hseh-test")
-	witness, err := herdr.ReadContinuityWitness()
-	if err != nil {
-		t.Fatal(err)
-	}
-	history := focus.EmptyHistory(witness)
-	history = focus.ApplyVerifiedOccupantTransition(history, "w1:p1", "pi", "shared", false)
-	history = focus.RecordAgentPaneFocus(history, "w1:p1")
-	if err := focus.WriteFile(stateDir, history); err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command(compiledHseh, "list", "--json", "--view", "agents")
-	cmd.Env = append(os.Environ(),
-		"HERDR_SOCKET_PATH="+socketPath,
-		"HERDR_PLUGIN_STATE_DIR="+stateDir,
-		"HERDR_SESSION=hseh-test",
-	)
-	if out, err := cmd.CombinedOutput(); err != nil {
+	seedAgentHistory(t, socketPath, stateDir, "shared")
+	if out, err := runCompiledHseh(hsehtest.Env(socketPath, stateDir, t.TempDir()), "list", "--json", "--view", "agents"); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	got, err := focus.LoadFile(stateDir)
@@ -202,28 +200,12 @@ func TestCompiledEventHookMoveAfterSnapshotDrop(t *testing.T) {
 		},
 	}
 	socketPath, stateDir := hsehtest.Start(t, &hsehtest.Server{Snapshot: snapshot})
-	t.Setenv("HERDR_SOCKET_PATH", socketPath)
-	t.Setenv("HERDR_PLUGIN_STATE_DIR", stateDir)
-	t.Setenv("HERDR_SESSION", "hseh-test")
-	witness, err := herdr.ReadContinuityWitness()
-	if err != nil {
-		t.Fatal(err)
-	}
-	history := focus.EmptyHistory(witness)
-	history = focus.ApplyVerifiedOccupantTransition(history, "w1:p1", "pi", "a", false)
-	history = focus.RecordAgentPaneFocus(history, "w1:p1")
-	if err := focus.WriteFile(stateDir, history); err != nil {
-		t.Fatal(err)
-	}
-	cmd := exec.Command(compiledHseh, "event")
-	cmd.Env = append(os.Environ(),
-		"HERDR_SOCKET_PATH="+socketPath,
-		"HERDR_PLUGIN_STATE_DIR="+stateDir,
-		"HERDR_SESSION=hseh-test",
+	seedAgentHistory(t, socketPath, stateDir, "a")
+	env := append(hsehtest.Env(socketPath, stateDir, t.TempDir()),
 		"HERDR_PLUGIN_EVENT=pane.moved",
 		`HERDR_PLUGIN_EVENT_JSON={"event":"pane_moved","data":{"type":"pane_moved","previous_pane_id":"w1:p1","pane":{"pane_id":"w2:p9"}}}`,
 	)
-	out, err := cmd.CombinedOutput()
+	out, err := runCompiledHseh(env, "event")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -231,7 +213,7 @@ func TestCompiledEventHookMoveAfterSnapshotDrop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got.Agents) != 1 || got.Agents[0].PaneID != "w2:p9" {
-		t.Fatalf("compiled move lost history: %+v", got.Agents)
+	if len(got.Agents) != 1 || got.Agents[0].PaneID != "w2:p9" || got.Agents[0].Generation != 1 {
+		t.Fatalf("compiled move must rekey, not replace, the occupant: %+v", got.Agents)
 	}
 }

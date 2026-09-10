@@ -24,7 +24,8 @@ func Read(ctx context.Context, dir string) WorkspaceGit {
 	if dir == "" {
 		return WorkspaceGit{}
 	}
-	defer trace.Span("git.status", "dir", dir)()
+	span := trace.Span("git.status", "dir", dir)
+	defer span()
 	root, ok := readRoot(ctx, dir)
 	if !ok {
 		return WorkspaceGit{}
@@ -35,6 +36,7 @@ func Read(ctx context.Context, dir string) WorkspaceGit {
 		if ctx.Err() != nil {
 			return WorkspaceGit{}
 		}
+		span("err", err)
 		return WorkspaceGit{Status: "git status unavailable", Root: root}
 	}
 	result := ParseStatus(string(output))
@@ -91,8 +93,8 @@ func ParseStatus(output string) WorkspaceGit {
 				}
 			}
 			if record[0] == '2' {
-				i++
-			} // The next NUL record is the original rename path, not another status.
+				i++ // The next NUL record is the original rename path, not another status.
+			}
 		}
 	}
 	if result.Branch == "(detached)" {

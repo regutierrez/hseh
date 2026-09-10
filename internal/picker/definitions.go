@@ -47,7 +47,9 @@ func definitionItem(def space.Definition, needsRecovery bool, git gitinfo.Worksp
 	}
 }
 
-func AppendUnopenedDefinitionItems(items []Item, view string, snapshot herdr.SessionSnapshot, definitions []space.Definition, records, unresolved []space.AssociationRecord) []Item {
+// AppendUnopenedDefinitionItems adds a template row for every definition without a live
+// associated workspace, sorted by name after the live rows.
+func AppendUnopenedDefinitionItems(items []Item, view string, snapshot herdr.SessionSnapshot, definitions []space.Definition, records, unresolved []space.AssociationRecord, git map[string]gitinfo.WorkspaceGit) []Item {
 	if view == ViewAgents {
 		return items
 	}
@@ -61,7 +63,7 @@ func AppendUnopenedDefinitionItems(items []Item, view string, snapshot herdr.Ses
 		if openKeys[space.AssociationIdentityKey(def.ID, def.ResolvedDir)] {
 			continue
 		}
-		extra = append(extra, definitionItem(def, unresolvedKeys[space.AssociationIdentityKey(def.ID, def.ResolvedDir)], snapshot.GitByDirectory[def.ResolvedDir]))
+		extra = append(extra, definitionItem(def, unresolvedKeys[space.AssociationIdentityKey(def.ID, def.ResolvedDir)], git[def.ResolvedDir]))
 	}
 	sort.SliceStable(extra, func(i, j int) bool { return extra[i].Label < extra[j].Label })
 	return append(items, extra...)

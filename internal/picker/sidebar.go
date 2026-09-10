@@ -18,9 +18,9 @@ type SidebarToken struct {
 	Styled bool
 }
 
-// SidebarLayout is the parsed Herdr sidebar configuration used by the picker.
+// SidebarLayout is the parsed Herdr sidebar configuration used by the picker. Spaces rows
+// have a fixed sesh-style shape, so only the agent rows and status glyph style are read.
 type SidebarLayout struct {
-	SpaceRows        [][]SidebarToken
 	AgentRows        [][]SidebarToken
 	AgentRowsByAgent map[string][][]SidebarToken
 	StatusIndicators string
@@ -34,9 +34,6 @@ type herdrSidebarFile struct {
 				Rows        [][]any            `toml:"rows"`
 				RowsByAgent map[string][][]any `toml:"rows_by_agent"`
 			} `toml:"agents"`
-			Spaces struct {
-				Rows [][]any `toml:"rows"`
-			} `toml:"spaces"`
 		} `toml:"sidebar"`
 	} `toml:"ui"`
 }
@@ -45,41 +42,42 @@ func defaultAgentSidebarRows() [][]string {
 	return [][]string{{"state_icon", "machine", "workspace", "tab"}, {"agent"}}
 }
 
-func defaultSpaceSidebarRows() [][]string {
-	return [][]string{{"state_icon", "workspace"}, {"branch", "git_status"}}
-}
-
 func defaultSidebarLayout() SidebarLayout {
 	return SidebarLayout{
-		SpaceRows:        tokensFromNames(defaultSpaceSidebarRows()),
 		AgentRows:        tokensFromNames(defaultAgentSidebarRows()),
 		AgentRowsByAgent: map[string][][]SidebarToken{},
 		StatusIndicators: "dots",
 	}
 }
 
-// LoadSidebarLayout reads ui.sidebar rows, rows_by_agent, token styles, and status_indicators.
-func LoadSidebarLayout(configPath string) (SidebarLayout, []string) {
-	layout := defaultSidebarLayout()
+// readHerdrConfig decodes Herdr's config.toml into v. A missing file leaves v untouched
+// and reports nothing; other read or parse failures are returned as footer messages.
+func readHerdrConfig(configPath, scope string, v any) []string {
 	if configPath == "" {
 		configPath = config.HerdrConfigPath()
 	}
 	payload, err := os.ReadFile(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return layout, nil
+			return nil
 		}
-		return layout, []string{fmt.Sprintf("hseh sidebar: read %s: %v", configPath, err)}
+		return []string{fmt.Sprintf("hseh %s: read %s: %v", scope, configPath, err)}
 	}
+	if err := toml.Unmarshal(payload, v); err != nil {
+		return []string{fmt.Sprintf("hseh %s: parse %s: %v", scope, configPath, err)}
+	}
+	return nil
+}
+
+// LoadSidebarLayout reads ui.sidebar agent rows, rows_by_agent, token styles, and status_indicators.
+func LoadSidebarLayout(configPath string) (SidebarLayout, []string) {
+	layout := defaultSidebarLayout()
 	var file herdrSidebarFile
-	if err := toml.Unmarshal(payload, &file); err != nil {
-		return layout, []string{fmt.Sprintf("hseh sidebar: parse %s: %v", configPath, err)}
+	if errs := readHerdrConfig(configPath, "sidebar", &file); errs != nil {
+		return layout, errs
 	}
 	if file.UI.StatusIndicators == "symbols" || file.UI.StatusIndicators == "dots" {
 		layout.StatusIndicators = file.UI.StatusIndicators
-	}
-	if parsed := parseSidebarTokenRows(file.UI.Sidebar.Spaces.Rows); len(parsed) > 0 {
-		layout.SpaceRows = parsed
 	}
 	if parsed := parseSidebarTokenRows(file.UI.Sidebar.Agents.Rows); len(parsed) > 0 {
 		layout.AgentRows = parsed

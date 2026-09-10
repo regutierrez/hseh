@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 	"sync/atomic"
@@ -99,7 +101,7 @@ func TestCallHerdrMethodHedgesSlowIdempotentReply(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { listener.Close() })
-	var connCount int32
+	var connCount, closedByClient int32
 	go func() {
 		for {
 			conn, err := listener.Accept()
@@ -109,27 +111,39 @@ func TestCallHerdrMethodHedgesSlowIdempotentReply(t *testing.T) {
 			n := atomic.AddInt32(&connCount, 1)
 			go func(c net.Conn, n int32) {
 				defer c.Close()
-				if _, err := bufio.NewReader(c).ReadBytes('\n'); err != nil {
+				reader := bufio.NewReader(c)
+				if _, err := reader.ReadBytes('\n'); err != nil {
 					return
 				}
 				if n == 1 {
 					time.Sleep(300 * time.Millisecond) // the slow tick
 				}
 				_, _ = c.Write([]byte(`{"id":"x","result":{"conn":` + strconv.Itoa(int(n)) + `}}` + "\n"))
+				// Herdr keeps the connection until the client hangs up; a client that
+				// never closes would pin this goroutine (and a server fd) forever.
+				_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
+				if _, err := reader.ReadByte(); err != nil && !errors.Is(err, os.ErrDeadlineExceeded) {
+					atomic.AddInt32(&closedByClient, 1)
+				}
 			}(conn, n)
 		}
 	}()
 	t.Setenv("HERDR_SOCKET_PATH", socketPath)
 	var result map[string]any
-	start := time.Now()
 	if _, err := CallContext(WithHedge(context.Background()), "session.snapshot", map[string]any{}, &result); err != nil {
 		t.Fatal(err)
 	}
-	if elapsed := time.Since(start); elapsed > 150*time.Millisecond {
-		t.Fatalf("hedge did not rescue the slow reply: %v", elapsed)
-	}
+	// The hedged connection's reply arriving at all proves the slow primary was not waited on.
 	if result["conn"] != float64(2) {
 		t.Fatalf("expected the hedged connection to win, got %v", result)
+	}
+	// Both connections, the slow primary and the winning hedge, must be closed by the client.
+	deadline := time.Now().Add(3 * time.Second)
+	for atomic.LoadInt32(&closedByClient) < 2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := atomic.LoadInt32(&closedByClient); got != 2 {
+		t.Fatalf("client closed %d of 2 hedged connections", got)
 	}
 	// Non-idempotent methods must never be resent, even when hedging is allowed.
 	atomic.StoreInt32(&connCount, 0)

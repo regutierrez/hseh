@@ -14,7 +14,7 @@ import (
 // DefaultPreviewPollMilliseconds is the selected visible preview poll interval.
 const DefaultPreviewPollMilliseconds = 500
 
-// DefaultWidePreviewMinColumns is the approved popup content width that shows the preview.
+// DefaultWidePreviewMinColumns is the popup content width at which the preview sits beside the list.
 const DefaultWidePreviewMinColumns = 100
 
 // Default popup geometry, matching the [[panes]] entries in herdr-plugin.toml.
@@ -23,7 +23,17 @@ var (
 	DefaultPopupHeight = PopupSize{Percent: 80}
 )
 
-type File struct {
+// Settings is hseh.toml with defaults applied. Every key is optional; an invalid
+// value is reported and that key falls back to its default.
+type Settings struct {
+	PreviewPoll           time.Duration
+	WidePreviewMinColumns int
+	PopupWidth            PopupSize
+	PopupHeight           PopupSize
+	TraceFile             string
+}
+
+type file struct {
 	PreviewPollMs         int    `toml:"preview_poll_ms"`
 	WidePreviewMinColumns int    `toml:"wide_preview_min_columns"`
 	TraceFile             string `toml:"trace_file"`
@@ -48,8 +58,6 @@ func (s PopupSize) Param() any {
 	return fmt.Sprintf("%d%%", s.Percent)
 }
 
-func (s PopupSize) String() string { return fmt.Sprint(s.Param()) }
-
 func parsePopupSize(key string, raw any) (PopupSize, error) {
 	switch v := raw.(type) {
 	case string:
@@ -72,66 +80,47 @@ func parsePopupSize(key string, raw any) (PopupSize, error) {
 	}
 }
 
-// LoadPopupSize reads popup_width and popup_height from plugin config. Each
-// dimension falls back to its default independently when unset or invalid.
-func LoadPopupSize() (width, height PopupSize, errs []string) {
-	width, height = DefaultPopupWidth, DefaultPopupHeight
-	file, errs := LoadFile()
-	if len(errs) > 0 {
-		return width, height, errs
+// Load reads hseh.toml from the plugin config directory. A missing file is the defaults.
+func Load() (Settings, []string) {
+	settings := Settings{
+		PreviewPoll:           time.Duration(DefaultPreviewPollMilliseconds) * time.Millisecond,
+		WidePreviewMinColumns: DefaultWidePreviewMinColumns,
+		PopupWidth:            DefaultPopupWidth,
+		PopupHeight:           DefaultPopupHeight,
 	}
-	if file.PopupWidth != nil {
-		if parsed, err := parsePopupSize("popup_width", file.PopupWidth); err != nil {
-			errs = append(errs, err.Error())
-		} else {
-			width = parsed
-		}
-	}
-	if file.PopupHeight != nil {
-		if parsed, err := parsePopupSize("popup_height", file.PopupHeight); err != nil {
-			errs = append(errs, err.Error())
-		} else {
-			height = parsed
-		}
-	}
-	return width, height, errs
-}
-
-func LoadFile() (File, []string) {
 	path := filepath.Join(ConfigDir(), "hseh.toml")
 	payload, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return File{}, nil
+			return settings, nil
 		}
-		return File{}, []string{fmt.Sprintf("hseh config: read %s: %v", path, err)}
+		return settings, []string{fmt.Sprintf("hseh config: read %s: %v", path, err)}
 	}
-	var file File
-	if err := toml.Unmarshal(payload, &file); err != nil {
-		return File{}, []string{fmt.Sprintf("hseh config: parse %s: %v", path, err)}
+	var f file
+	if err := toml.Unmarshal(payload, &f); err != nil {
+		return settings, []string{fmt.Sprintf("hseh config: parse %s: %v", path, err)}
 	}
-	return file, nil
-}
-
-// LoadPreviewPollInterval reads preview_poll_ms from plugin config, else 500ms.
-func LoadPreviewPollInterval() (time.Duration, []string) {
-	file, errs := LoadFile()
-	if len(errs) > 0 {
-		return time.Duration(DefaultPreviewPollMilliseconds) * time.Millisecond, errs
+	var errs []string
+	if f.PreviewPollMs > 0 {
+		settings.PreviewPoll = time.Duration(f.PreviewPollMs) * time.Millisecond
 	}
-	if file.PreviewPollMs <= 0 {
-		return time.Duration(DefaultPreviewPollMilliseconds) * time.Millisecond, nil
+	if f.WidePreviewMinColumns > 0 {
+		settings.WidePreviewMinColumns = f.WidePreviewMinColumns
 	}
-	return time.Duration(file.PreviewPollMs) * time.Millisecond, nil
-}
-
-func LoadWidePreviewMinColumns() (int, []string) {
-	file, errs := LoadFile()
-	if len(errs) > 0 {
-		return DefaultWidePreviewMinColumns, errs
+	settings.TraceFile = f.TraceFile
+	if f.PopupWidth != nil {
+		if parsed, err := parsePopupSize("popup_width", f.PopupWidth); err != nil {
+			errs = append(errs, err.Error())
+		} else {
+			settings.PopupWidth = parsed
+		}
 	}
-	if file.WidePreviewMinColumns <= 0 {
-		return DefaultWidePreviewMinColumns, nil
+	if f.PopupHeight != nil {
+		if parsed, err := parsePopupSize("popup_height", f.PopupHeight); err != nil {
+			errs = append(errs, err.Error())
+		} else {
+			settings.PopupHeight = parsed
+		}
 	}
-	return file.WidePreviewMinColumns, nil
+	return settings, errs
 }

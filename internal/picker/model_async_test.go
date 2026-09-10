@@ -129,7 +129,7 @@ func TestPreviousAgentOffscreenStaysVisible(t *testing.T) {
 	}
 	items = append(items, Item{ID: "prev", Rows: []string{"PREVIOUS_AGENT", "line2", "line3"}})
 	m := model{width: 40, height: 8, selectedID: "prev", visible: items}
-	got := termtext.StripControls(m.renderList(20, 6))
+	got := termtext.StripControls(strings.Join(m.buildListLayout(20, 6).Lines, "\n"))
 	if !strings.Contains(got, "PREVIOUS_AGENT") {
 		t.Fatalf("previous agent offscreen: %q", got)
 	}
@@ -157,7 +157,7 @@ func TestAgentPriorityOrderBlockedFirst(t *testing.T) {
 		{PaneRow: herdr.PaneRow{PaneID: "p-block", Agent: "pi", AgentStatus: "blocked"}, StateChangeSeq: 1},
 		{PaneRow: herdr.PaneRow{PaneID: "p-work", Agent: "pi", AgentStatus: "working"}, StateChangeSeq: 4},
 	}}
-	items := BuildItemsWithLayout("agents", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout())
+	items := BuildItemsWithLayout("agents", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil)
 	want := []string{"p-block", "p-done", "p-work", "p-idle"}
 	if len(items) != 4 {
 		t.Fatalf("%d items", len(items))
@@ -185,12 +185,11 @@ func TestSnapshotCorruptAssociationKeepsLiveMembership(t *testing.T) {
 		{WorkspaceID: "w2", Label: "beta"},
 		{WorkspaceID: "w3", Label: "gamma"},
 	}}
-	next, _ := m.Update(snapshotLoadedMsg{
-		seq:        1,
-		snapshot:   fresh,
-		history:    focus.EmptyHistory(herdr.ContinuityWitness{}),
-		catalogErr: fmt.Errorf("hseh association: corrupt state"),
-	})
+	next, _ := m.Update(snapshotLoadedMsg{seq: 1, liveState: liveState{
+		snapshot: fresh,
+		history:  focus.EmptyHistory(herdr.ContinuityWitness{}),
+		assocErr: fmt.Errorf("hseh association: corrupt state"),
+	}})
 	got := next.(model)
 	if len(got.snapshot.Workspaces) != 3 {
 		t.Fatalf("live snapshot discarded: %+v", got.snapshot.Workspaces)
@@ -221,12 +220,10 @@ func TestSnapshotLiveFetchErrorDoesNotReplaceSnapshot(t *testing.T) {
 	}
 }
 
-// The first preview read is what the user waits for on open, so it must be a
-// hedged selection-change read. Pre-seeding previewPane during rebuildVisible
-// once made afterSelectionChange treat it as an unhedged refresh that could sit
-// on Herdr's 100ms poll tick.
+// The first preview read is what the user waits for on open, so it must be a hedged
+// selection-change read, not an unhedged refresh. Only agent rows read panes; spaces
+// list a directory and never touch the socket.
 func TestFirstPreviewReadIsHedged(t *testing.T) {
-	// Only agent rows read panes now; spaces list a directory and never touch the socket.
 	snapshot := herdr.SessionSnapshot{
 		FocusedWorkspaceID: "w1",
 		Workspaces: []herdr.WorkspaceRow{
@@ -258,7 +255,7 @@ func TestFirstPreviewReadIsHedged(t *testing.T) {
 	m.width, m.height = 120, 30
 	m.readPane = record(&asyncReads)
 	m.snapshotSeq, m.snapshotInFlight = 1, true
-	next, cmd := m.Update(snapshotLoadedMsg{seq: 1, snapshot: snapshot, history: history})
+	next, cmd := m.Update(snapshotLoadedMsg{seq: 1, liveState: liveState{snapshot: snapshot, history: history}})
 	got := feedCmd(next.(model), cmd)
 	if len(asyncReads) != 1 || asyncReads[0].pane != "w2:p1" {
 		t.Fatalf("first snapshot reads = %+v, want one read of w2:p1", asyncReads)
@@ -266,8 +263,8 @@ func TestFirstPreviewReadIsHedged(t *testing.T) {
 	if !asyncReads[0].hedged {
 		t.Fatal("first preview read after the snapshot was not hedged")
 	}
-	if !got.previewTextLive || got.previewText != "frame:w2:p1" {
-		t.Fatalf("first preview not painted: live=%v text=%q", got.previewTextLive, got.previewText)
+	if got.previewListing || got.previewText != "frame:w2:p1" {
+		t.Fatalf("first preview not painted: listing=%v text=%q", got.previewListing, got.previewText)
 	}
 
 	// Sync path: a model built with the snapshot in hand boots straight into its first read.

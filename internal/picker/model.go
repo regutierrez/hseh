@@ -20,12 +20,12 @@ import (
 	"github.com/regutierrez/hseh/internal/trace"
 )
 
-// DefaultSnapshotPollMilliseconds is the live membership/status refresh interval.
+// snapshotPollInterval is the live membership/status refresh interval.
 // It is slower than the preview clock: membership changes rarely, terminal output often.
-const DefaultSnapshotPollMilliseconds = 1000
+const snapshotPollInterval = time.Second
 
-// DefaultGitPollMilliseconds is the workspace git branch/status refresh interval.
-const DefaultGitPollMilliseconds = 3000
+// gitPollInterval is the workspace git branch/status refresh interval.
+const gitPollInterval = 3 * time.Second
 
 // DefaultPreviewLoadingDelay is how long a new preview may take before "Loading preview…" replaces the last frame.
 const DefaultPreviewLoadingDelay = 500 * time.Millisecond
@@ -52,14 +52,11 @@ type snapshotTickMsg struct{}
 
 type gitTickMsg struct{}
 
+// snapshotLoadedMsg carries one live refresh. liveErr means the snapshot could not be read at all.
 type snapshotLoadedMsg struct {
-	seq        uint64
-	snapshot   herdr.SessionSnapshot
-	history    focus.History
-	records    []space.AssociationRecord
-	unresolved []space.AssociationRecord
-	liveErr    error
-	catalogErr error
+	seq uint64
+	liveState
+	liveErr error
 }
 
 // catalogLoadedMsg carries the sidebar layout and reusable-space definitions loaded after first paint.
@@ -83,9 +80,6 @@ type cancelSet struct {
 }
 
 func (c *cancelSet) replace(slot *context.CancelFunc) context.Context {
-	if c == nil {
-		return context.Background()
-	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if *slot != nil {
@@ -97,9 +91,6 @@ func (c *cancelSet) replace(slot *context.CancelFunc) context.Context {
 }
 
 func (c *cancelSet) cancelPreview() {
-	if c == nil {
-		return
-	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.preview != nil {
@@ -109,9 +100,6 @@ func (c *cancelSet) cancelPreview() {
 }
 
 func (c *cancelSet) cancelAll() {
-	if c == nil {
-		return
-	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, slot := range []*context.CancelFunc{&c.preview, &c.snapshot, &c.accept, &c.git, &c.catalog} {
@@ -149,8 +137,8 @@ type model struct {
 
 	// Preview state. previewText is the last frame shown; it survives selection
 	// changes until the new read lands so navigation never blanks the pane.
+	// previewListing marks it as a directory listing rather than a live pane frame.
 	previewText         string
-	previewTextLive     bool
 	previewListing      bool
 	previewErr          string
 	previewPane         string
@@ -171,8 +159,6 @@ type model struct {
 	assocErr         string
 	acceptErr        string
 	statusErr        string
-	snapshotEvery    time.Duration
-	gitEvery         time.Duration
 	snapshotSeq      uint64
 	snapshotInFlight bool
 	gitInFlight      bool
@@ -190,26 +176,6 @@ type model struct {
 	milestones    map[string]bool
 }
 
-// newModel builds a model with the catalog already loaded (used by tests and list tooling).
-func newModel(view string, snapshot herdr.SessionSnapshot, history focus.History, layout SidebarLayout, pollEvery time.Duration, wideMin int) model {
-	history = focus.Prune(history, snapshot)
-	launch := launchFromEnv(snapshot, history)
-	m := model{
-		view:               view,
-		snapshot:           snapshot,
-		history:            history,
-		layout:             layout,
-		previewEvery:       pollEvery,
-		widePreviewMinCols: wideMin,
-		launch:             launch,
-		cancels:            &cancelSet{},
-		snapshotReady:      true,
-		catalogReady:       true,
-	}
-	m.rebuildVisible()
-	return m
-}
-
 // newAsyncModel paints chrome first; snapshot, history, layout and definitions load after Init.
 func newAsyncModel(view string, theme colorTheme, pollEvery time.Duration, wideMin int, configErrs []string) model {
 	m := model{
@@ -219,20 +185,9 @@ func newAsyncModel(view string, theme colorTheme, pollEvery time.Duration, wideM
 		previewEvery:       pollEvery,
 		widePreviewMinCols: wideMin,
 		catalogErrors:      configErrs,
-		cancels:            &cancelSet{},
 	}
 	m.recomputeStatus()
 	return m
-}
-
-func (m *model) setSpaceCatalog(definitions []space.Definition, records, unresolved []space.AssociationRecord, errs []string) {
-	m.definitions = definitions
-	m.associationRecords = records
-	m.unresolvedRecords = unresolved
-	m.catalogErrors = errs
-	m.catalogReady = true
-	m.recomputeStatus()
-	m.rebuildVisible()
 }
 
 // recomputeStatus picks the footer error: a failed accept, then live socket, then association, then config.
@@ -262,10 +217,8 @@ func (m *model) rebuildVisible() {
 }
 
 func (m *model) catalogItems() []Item {
-	snapshot := m.snapshot
-	snapshot.GitByDirectory = m.gitByDirectory
-	items := BuildItemsWithLayout(m.view, snapshot, m.history, m.layout)
-	return AppendUnopenedDefinitionItems(items, m.view, snapshot, m.definitions, m.associationRecords, m.unresolvedRecords)
+	live := liveState{snapshot: m.snapshot, history: m.history, records: m.associationRecords, unresolved: m.unresolvedRecords}
+	return assembleItems(m.view, live, m.layout, m.definitions, m.gitByDirectory)
 }
 
 // previewTarget names what the item previews: a live agent pane, or the directory of a space/template.
@@ -285,28 +238,20 @@ func (m model) Init() tea.Cmd {
 	return func() tea.Msg { return bootMsg{} }
 }
 
-func tickAfter(every, fallback time.Duration, msg tea.Msg) tea.Cmd {
-	if every <= 0 {
-		every = fallback
-	}
-	return tea.Tick(every, func(time.Time) tea.Msg { return msg })
+func tickSnapshot() tea.Cmd {
+	return tea.Tick(snapshotPollInterval, func(time.Time) tea.Msg { return snapshotTickMsg{} })
 }
 
-func (m model) tickSnapshot() tea.Cmd {
-	return tickAfter(m.snapshotEvery, time.Duration(DefaultSnapshotPollMilliseconds)*time.Millisecond, snapshotTickMsg{})
-}
-
-func (m model) tickGit() tea.Cmd {
-	return tickAfter(m.gitEvery, time.Duration(DefaultGitPollMilliseconds)*time.Millisecond, gitTickMsg{})
+func tickGit() tea.Cmd {
+	return tea.Tick(gitPollInterval, func(time.Time) tea.Msg { return gitTickMsg{} })
 }
 
 func (m model) tickPreview(seq uint64) tea.Cmd {
-	return tickAfter(m.previewEvery, time.Duration(config.DefaultPreviewPollMilliseconds)*time.Millisecond, previewTickMsg{seq: seq})
-}
-
-// wideEnoughForPreview reports side-by-side layout. Narrower popups stack the preview instead of hiding it.
-func (m model) wideEnoughForPreview() bool {
-	return m.frame().mode == previewSide
+	every := m.previewEvery
+	if every <= 0 {
+		every = time.Duration(config.DefaultPreviewPollMilliseconds) * time.Millisecond
+	}
+	return tea.Tick(every, func(time.Time) tea.Msg { return previewTickMsg{seq: seq} })
 }
 
 // showsPreview reports whether any preview pane (side or stacked) is on screen.
@@ -358,7 +303,7 @@ func update(m *model, msg tea.Msg) tea.Cmd {
 		if !m.catalogReady {
 			cmds = append(cmds, m.startCatalog())
 		}
-		cmds = append(cmds, m.startSnapshot(), m.tickSnapshot(), m.tickGit())
+		cmds = append(cmds, m.startSnapshot(), tickSnapshot(), tickGit())
 		if m.snapshotReady {
 			cmds = append(cmds, m.startGit(), m.afterSelectionChange())
 		}
@@ -382,12 +327,12 @@ func update(m *model, msg tea.Msg) tea.Cmd {
 		if m.quitting {
 			return nil
 		}
-		return tea.Batch(m.tickSnapshot(), m.startSnapshot())
+		return tea.Batch(tickSnapshot(), m.startSnapshot())
 	case gitTickMsg:
 		if m.quitting {
 			return nil
 		}
-		return tea.Batch(m.tickGit(), m.startGit())
+		return tea.Batch(tickGit(), m.startGit())
 	case previewTickMsg:
 		if m.quitting || msg.seq != m.previewSeq || m.previewInFlight {
 			return nil
@@ -436,19 +381,16 @@ func update(m *model, msg tea.Msg) tea.Cmd {
 		m.liveErr = ""
 		m.snapshot = msg.snapshot
 		m.history = msg.history
-		if msg.catalogErr != nil {
-			m.associationRecords = nil
-			m.unresolvedRecords = nil
-			m.assocErr = msg.catalogErr.Error()
-		} else {
-			m.associationRecords = msg.records
-			m.unresolvedRecords = msg.unresolved
-			m.assocErr = ""
+		m.associationRecords = msg.records
+		m.unresolvedRecords = msg.unresolved
+		m.assocErr = ""
+		if msg.assocErr != nil {
+			m.assocErr = msg.assocErr.Error()
 		}
 		m.recomputeStatus()
 		if !m.snapshotReady {
 			m.snapshotReady = true
-			m.launch = launchFromEnv(m.snapshot, m.history)
+			m.launch = launchFromSnapshot(m.snapshot, m.history)
 			m.rebuildVisible()
 			m.traceMilestone("snapshot_applied")
 			return tea.Batch(m.afterSelectionChange(), m.startGit())
@@ -474,12 +416,10 @@ func update(m *model, msg tea.Msg) tea.Cmd {
 		if msg.err != nil {
 			m.previewErr = msg.err.Error()
 			m.previewText = ""
-			m.previewTextLive = false
 			m.previewListing = false
 		} else {
 			m.previewErr = ""
 			m.previewText = msg.text
-			m.previewTextLive = msg.dir == ""
 			m.previewListing = msg.dir != ""
 			m.traceMilestone("preview_painted")
 		}
@@ -503,8 +443,6 @@ func update(m *model, msg tea.Msg) tea.Cmd {
 			m.quitting = true
 			m.pendingAccept = false
 			m.io().cancelAll()
-			m.previewSeq++
-			m.snapshotSeq++
 			return tea.Quit
 		case tea.KeyEnter:
 			return m.startAccept()
@@ -613,9 +551,7 @@ func (m *model) startCatalog() tea.Cmd {
 		if ctx.Err() != nil {
 			return nil
 		}
-		layout, errs := LoadSidebarLayout("")
-		definitions, defErrs := space.LoadDefinitions(config.SpaceDefinitionsDir())
-		errs = append(errs, defErrs...)
+		layout, definitions, errs := loadCatalog()
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -637,20 +573,8 @@ func (m *model) startSnapshot() tea.Cmd {
 	}
 	return func() tea.Msg {
 		defer trace.Span("snapshot.load")()
-		snapshot, witness, err := herdr.LoadSessionSnapshotContext(ctx)
-		if err != nil {
-			return snapshotLoadedMsg{seq: seq, liveErr: err}
-		}
-		history, err := focus.LoadPruned(snapshot, witness)
-		if err != nil {
-			return snapshotLoadedMsg{seq: seq, liveErr: err}
-		}
-		state, assocErr := space.LoadAssociationFile(config.StateDir())
-		if assocErr != nil {
-			return snapshotLoadedMsg{seq: seq, snapshot: snapshot, history: history, catalogErr: assocErr}
-		}
-		state = space.ReconcileAssociationState(state, witness)
-		return snapshotLoadedMsg{seq: seq, snapshot: snapshot, history: history, records: state.Records, unresolved: state.Unresolved}
+		live, err := loadLive(ctx)
+		return snapshotLoadedMsg{seq: seq, liveState: live, liveErr: err}
 	}
 }
 
@@ -683,7 +607,6 @@ func (m *model) stopPreviewChain() {
 
 func (m *model) clearPreview() {
 	m.previewText = ""
-	m.previewTextLive = false
 	m.previewListing = false
 	m.previewErr = ""
 	m.previewPane = ""
@@ -741,11 +664,16 @@ func (m *model) startPreview(refresh bool) tea.Cmd {
 	if refresh {
 		return readCmd
 	}
+	return tea.Batch(readCmd, m.previewLoadingCmd(ctx, seq))
+}
+
+// previewLoadingCmd fires previewLoadingMsg once the loading delay passes, unless the read finishes (cancels ctx) first.
+func (m *model) previewLoadingCmd(ctx context.Context, seq uint64) tea.Cmd {
 	delay := m.previewLoadingDelay
 	if delay <= 0 {
 		delay = DefaultPreviewLoadingDelay
 	}
-	loadingCmd := func() tea.Msg {
+	return func() tea.Msg {
 		timer := time.NewTimer(delay)
 		defer timer.Stop()
 		select {
@@ -755,7 +683,6 @@ func (m *model) startPreview(refresh bool) tea.Cmd {
 			return previewLoadingMsg{seq: seq}
 		}
 	}
-	return tea.Batch(readCmd, loadingCmd)
 }
 
 // startDirectoryPreview lists the selected row's directory once. It never polls and never
@@ -782,21 +709,7 @@ func (m *model) startDirectoryPreview(item Item, dir string) tea.Cmd {
 		}
 		return previewLoadedMsg{seq: seq, targetID: targetID, dir: dir, text: text}
 	}
-	delay := m.previewLoadingDelay
-	if delay <= 0 {
-		delay = DefaultPreviewLoadingDelay
-	}
-	loadingCmd := func() tea.Msg {
-		timer := time.NewTimer(delay)
-		defer timer.Stop()
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-timer.C:
-			return previewLoadingMsg{seq: seq}
-		}
-	}
-	return tea.Batch(readCmd, loadingCmd)
+	return tea.Batch(readCmd, m.previewLoadingCmd(ctx, seq))
 }
 
 func (m *model) dirReader() func(ctx context.Context, dir string) (string, error) {
@@ -1010,14 +923,10 @@ func Run(view string) error {
 	if err != nil {
 		return err
 	}
-	poll, configErrs := config.LoadPreviewPollInterval()
-	wideMin, moreErrs := config.LoadWidePreviewMinColumns()
-	configErrs = append(configErrs, moreErrs...)
-	_, _, sizeErrs := config.LoadPopupSize()
-	configErrs = append(configErrs, sizeErrs...)
+	settings, configErrs := config.Load()
 	theme, themeErrs := loadTheme("")
 	configErrs = append(configErrs, themeErrs...)
-	m := newAsyncModel(view, theme, poll, wideMin, configErrs)
+	m := newAsyncModel(view, theme, settings.PreviewPoll, settings.WidePreviewMinColumns, configErrs)
 	m.mouseOut = os.Stdout
 	defer m.io().cancelAll()
 	_, _ = io.WriteString(os.Stdout, mouseClickOnlyEnable)

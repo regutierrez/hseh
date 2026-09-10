@@ -2,13 +2,9 @@ package picker
 
 import (
 	"fmt"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
-
-	"github.com/BurntSushi/toml"
-	"github.com/regutierrez/hseh/internal/config"
 )
 
 // colorTheme holds SGR prefixes for picker chrome, resolved from Herdr's
@@ -76,19 +72,9 @@ type herdrThemeFile struct {
 // loadTheme resolves the picker chrome palette from Herdr's config.
 // Missing or unparsable config falls back to Herdr's default palette.
 func loadTheme(configPath string) (colorTheme, []string) {
-	if configPath == "" {
-		configPath = config.HerdrConfigPath()
-	}
-	payload, err := os.ReadFile(configPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return resolveTheme("", nil), nil
-		}
-		return resolveTheme("", nil), []string{fmt.Sprintf("hseh theme: read %s: %v", configPath, err)}
-	}
 	var file herdrThemeFile
-	if err := toml.Unmarshal(payload, &file); err != nil {
-		return resolveTheme("", nil), []string{fmt.Sprintf("hseh theme: parse %s: %v", configPath, err)}
+	if errs := readHerdrConfig(configPath, "theme", &file); errs != nil {
+		return resolveTheme("", nil), errs
 	}
 	return resolveTheme(file.Theme.Name, file.Theme.Custom), nil
 }
@@ -107,15 +93,14 @@ func resolveTheme(name string, custom map[string]string) colorTheme {
 	if key == "terminal" && len(custom) == 0 {
 		return terminalTheme()
 	}
+	base := key
+	if key == "terminal" {
+		// Custom hex overrides need a 24-bit base; the terminal palette has none.
+		base = defaultHerdrThemeName
+	}
 	tokens := map[string]string{}
-	if key != "terminal" {
-		for token, value := range herdrThemePalettes[key] {
-			tokens[token] = value
-		}
-	} else {
-		for token, value := range herdrThemePalettes[defaultHerdrThemeName] {
-			tokens[token] = value
-		}
+	for token, value := range herdrThemePalettes[base] {
+		tokens[token] = value
 	}
 	for token, value := range custom {
 		if hexColorPattern.MatchString(value) {

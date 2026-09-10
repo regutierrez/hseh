@@ -16,11 +16,11 @@ import (
 	"github.com/regutierrez/hseh/internal/trace"
 )
 
-// Timeout bounds one eza run. A directory on a stalled mount must not hold the preview.
-const Timeout = 2 * time.Second
+// ezaTimeout bounds one eza run. A directory on a stalled mount must not hold the preview.
+const ezaTimeout = 2 * time.Second
 
-// MaxLines caps listing output so a huge directory cannot flood the preview.
-const MaxLines = 500
+// maxLines caps listing output so a huge directory cannot flood the preview.
+const maxLines = 500
 
 // ezaArgs are fixed: the preview shows what eza shows, not a user command. No long format:
 // one name per line keeps filenames visible in a narrow preview column.
@@ -54,8 +54,8 @@ func Read(ctx context.Context, dir string) (string, error) {
 	return readBuiltin(dir)
 }
 
-func readEza(ctx context.Context, eza, dir string) (string, error) {
-	ctx, cancel := context.WithTimeout(ctx, Timeout)
+func readEza(parent context.Context, eza, dir string) (string, error) {
+	ctx, cancel := context.WithTimeout(parent, ezaTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, eza, append(append([]string{}, ezaArgs...), "--", dir)...)
 	// eza runs in its own process group so a timeout kills any child it spawned too.
@@ -72,8 +72,11 @@ func readEza(ctx context.Context, eza, dir string) (string, error) {
 	cmd.Stdout = &out
 	cmd.Stderr = &stderr
 	err := cmd.Run()
+	if parent.Err() != nil {
+		return "", parent.Err()
+	}
 	if ctx.Err() == context.DeadlineExceeded {
-		return "", fmt.Errorf("eza timed out after %s", Timeout)
+		return "", fmt.Errorf("eza timed out after %s", ezaTimeout)
 	}
 	if err != nil {
 		if msg := strings.TrimSpace(stderr.String()); msg != "" {
@@ -111,10 +114,10 @@ func capLines(text string) string {
 		return copyEmptyDirectory
 	}
 	lines := strings.Split(text, "\n")
-	if len(lines) <= MaxLines {
+	if len(lines) <= maxLines {
 		return text
 	}
-	return strings.Join(lines[:MaxLines], "\n") + fmt.Sprintf("\n… %d more", len(lines)-MaxLines)
+	return strings.Join(lines[:maxLines], "\n") + fmt.Sprintf("\n… %d more", len(lines)-maxLines)
 }
 
 func firstLine(text string) string {

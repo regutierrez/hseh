@@ -10,21 +10,8 @@ import (
 	"github.com/regutierrez/hseh/internal/focus"
 	"github.com/regutierrez/hseh/internal/gitinfo"
 	"github.com/regutierrez/hseh/internal/herdr"
+	"github.com/regutierrez/hseh/internal/hsehtest"
 )
-
-func TestGitPorcelainCountsRenameConflictAndDivergence(t *testing.T) {
-	payload := "# branch.oid abcdef123456\x00# branch.head topic\x00# branch.ab +2 -3\x00" +
-		"2 R. N... 100644 100644 100644 abc abc R100 renamed\x00? original-name\x00" +
-		"? untracked\x00u UU N... conflict\x00"
-	got := gitinfo.ParseStatus(payload)
-	if got.Branch != "topic" || got.Status != "+1 ?1 !1 ↑2 ↓3" {
-		t.Fatalf("%+v", got)
-	}
-	detached := gitinfo.ParseStatus("# branch.oid abcdef123456\x00# branch.head (detached)\x00")
-	if detached.Branch != "@abcdef1" || detached.Status != "" {
-		t.Fatalf("%+v", detached)
-	}
-}
 
 func TestGitUsesOnlyActivePaneDirectoryAndLinkedWorktree(t *testing.T) {
 	root := t.TempDir()
@@ -33,13 +20,13 @@ func TestGitUsesOnlyActivePaneDirectoryAndLinkedWorktree(t *testing.T) {
 	if err := os.Mkdir(repo, 0700); err != nil {
 		t.Fatal(err)
 	}
-	gitFixture(t, repo, "init", "-b", "main")
+	hsehtest.Git(t, repo, "init", "-b", "main")
 	if err := os.WriteFile(filepath.Join(repo, "tracked"), []byte("file"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	gitFixture(t, repo, "add", "tracked")
-	gitFixture(t, repo, "commit", "-m", "initial")
-	gitFixture(t, repo, "worktree", "add", "-b", "feature", worktree)
+	hsehtest.Git(t, repo, "add", "tracked")
+	hsehtest.Git(t, repo, "commit", "-m", "initial")
+	hsehtest.Git(t, repo, "worktree", "add", "-b", "feature", worktree)
 	snapshot := herdr.SessionSnapshot{
 		Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w1", Label: "Project", ActiveTabID: "w1:t1"}},
 		Layouts:    []herdr.PaneLayout{{TabID: "w1:t1", FocusedPaneID: "w1:p2"}},

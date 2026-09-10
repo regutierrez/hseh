@@ -6,19 +6,6 @@ import (
 	"github.com/regutierrez/hseh/internal/herdr"
 )
 
-func TestSameServerContinuityWitnessRequiresPidAndStartTime(t *testing.T) {
-	live := herdr.ContinuityWitness{SocketPath: "/tmp/s", PeerPID: 9, PeerStartTime: "100"}
-	if herdr.SameContinuityWitness(herdr.ContinuityWitness{SocketPath: "/tmp/s", PeerPID: 9, PeerStartTime: "99"}, live) {
-		t.Fatal("start time mismatch must invalidate history")
-	}
-	if herdr.SameContinuityWitness(herdr.ContinuityWitness{SocketPath: "/tmp/s", PeerPID: 8, PeerStartTime: "100"}, live) {
-		t.Fatal("pid mismatch must invalidate history")
-	}
-	if !herdr.SameContinuityWitness(live, live) {
-		t.Fatal("identical witness must match")
-	}
-}
-
 func TestApplyVerifiedOccupantTransitionIgnoresRepeatDetection(t *testing.T) {
 	history := EmptyHistory(herdr.ContinuityWitness{})
 	history = ApplyVerifiedOccupantTransition(history, "w1:p1", "pi", "sess-a", false)
@@ -58,7 +45,7 @@ func TestRekeyMovedPaneOccupantKeepsGeneration(t *testing.T) {
 	history = ApplyVerifiedOccupantTransition(history, "w1:p1", "pi", "sess-a", false)
 	history.Occupants["w1:p1"] = PaneOccupant{Generation: 3, AgentKind: "pi", SessionValue: "sess-a"}
 	history = RecordAgentPaneFocus(history, "w1:p1")
-	history = RekeyMovedPaneOccupant(history, "w1:p1", "w2:p9")
+	history = rekeyMovedPaneOccupant(history, "w1:p1", "w2:p9")
 	id, ok := CurrentAgentLiveID(history, "w2:p9")
 	if !ok || id.Generation != 3 || id.PaneID != "w2:p9" {
 		t.Fatalf("move must rekey same occupant: %+v", id)
@@ -79,7 +66,7 @@ func TestLoadValidatedFocusHistoryDropsOnWitnessMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	live := herdr.ContinuityWitness{SocketPath: "/tmp/a", PeerPID: 1, PeerStartTime: "2"}
-	got, err := LoadValidated(dir, live)
+	got, err := loadValidated(dir, live)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +98,7 @@ func TestVerifiedMoveThenPruneKeepsOccupant(t *testing.T) {
 	h := EmptyHistory(herdr.ContinuityWitness{})
 	h = ApplyVerifiedOccupantTransition(h, "w1:p1", "pi", "a", false)
 	h = RecordAgentPaneFocus(h, "w1:p1")
-	h = RekeyMovedPaneOccupant(h, "w1:p1", "w2:p9")
+	h = rekeyMovedPaneOccupant(h, "w1:p1", "w2:p9")
 	snapshot := herdr.SessionSnapshot{Agents: []herdr.AgentRow{{PaneRow: herdr.PaneRow{PaneID: "w2:p9", Agent: "pi", AgentSession: &herdr.AgentSession{Value: "a"}}}}}
 	h = Prune(h, snapshot)
 	if len(h.Agents) != 1 || h.Agents[0].PaneID != "w2:p9" {
@@ -161,9 +148,23 @@ func TestSelectNextWorkspaceUsesPreviousThenCycle(t *testing.T) {
 	snapshot.FocusedWorkspaceID = "wC"
 	snapshot.Workspaces[0].Focused = false
 	snapshot.Workspaces[2].Focused = true
-	history = RecordWorkspaceFocus(history, "wC")
+	history = recordWorkspaceFocus(history, "wC")
 	_, target = SelectNextWorkspace(history, snapshot, 1250)
 	if target != "wA" {
 		t.Fatalf("cycle, got %q", target)
+	}
+}
+
+func TestPruneDropsHistoryWhenPaneConversationIsReplaced(t *testing.T) {
+	h := EmptyHistory(herdr.ContinuityWitness{})
+	h = ApplyVerifiedOccupantTransition(h, "w1:p1", "pi", "old", false)
+	h = RecordAgentPaneFocus(h, "w1:p1")
+	snapshot := herdr.SessionSnapshot{Agents: []herdr.AgentRow{{PaneRow: herdr.PaneRow{PaneID: "w1:p1", Agent: "pi", AgentSession: &herdr.AgentSession{Value: "new"}}}}}
+	h = Prune(h, snapshot)
+	if len(h.Agents) > 0 {
+		t.Fatalf("replacement inherits old history: %+v", h.Agents)
+	}
+	if id, _ := CurrentAgentLiveID(h, "w1:p1"); id.Generation != 2 {
+		t.Fatalf("replacement must bump generation: %+v", id)
 	}
 }

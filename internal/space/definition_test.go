@@ -21,7 +21,7 @@ func TestEnsureSpaceDefinitionIDInsertsMissingTopLevel(t *testing.T) {
 	if err := os.WriteFile(path, original, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	def, err := EnsureDefinitionID(path)
+	def, err := ensureDefinitionID(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestEnsureSpaceDefinitionIDKeepsQuotedKey(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	def, err := EnsureDefinitionID(path)
+	def, err := ensureDefinitionID(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestEnsureSpaceDefinitionIDIgnoresCommentedAndTableIDs(t *testing.T) {
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	def, err := EnsureDefinitionID(path)
+	def, err := ensureDefinitionID(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func TestEnsureSpaceDefinitionIDRejectsBlankExistingID(t *testing.T) {
 	if err := os.WriteFile(path, []byte(validDefinitionTOML(dir, "id = \"\"\n")), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := EnsureDefinitionID(path); err == nil {
+	if _, err := ensureDefinitionID(path); err == nil {
 		t.Fatal("expected empty id error")
 	}
 }
@@ -95,7 +95,7 @@ func TestEnsureSpaceDefinitionIDRejectsReadOnlyFile(t *testing.T) {
 	if err := os.WriteFile(path, []byte(validDefinitionTOML(dir, "")), 0o400); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := EnsureDefinitionID(path); err == nil {
+	if _, err := ensureDefinitionID(path); err == nil {
 		t.Fatal("expected read-only error")
 	}
 	got, _ := os.ReadFile(path)
@@ -118,7 +118,7 @@ func TestEnsureSpaceDefinitionIDConcurrentLoadsShareOneID(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		go func(i int) {
 			defer wg.Done()
-			def, err := EnsureDefinitionID(path)
+			def, err := ensureDefinitionID(path)
 			errs[i] = err
 			ids[i] = def.ID
 		}(i)
@@ -201,23 +201,6 @@ func TestReplaceSpaceDefinitionFileDetectsConcurrentEdit(t *testing.T) {
 	}
 }
 
-func TestCanonicalSpaceDefinitionPathUnifiesRelativeAndAbsolute(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "demo.toml")
-	if err := os.WriteFile(path, []byte("name = \"x\"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	t.Chdir(dir)
-	abs := canonicalDefinitionPath(path)
-	rel := canonicalDefinitionPath("demo.toml")
-	if abs != rel {
-		t.Fatalf("relative and absolute aliases differ: %q vs %q", rel, abs)
-	}
-	if !filepath.IsAbs(abs) {
-		t.Fatalf("canonical path is not absolute: %q", abs)
-	}
-}
-
 func TestEnsureSpaceDefinitionIDWritesThroughSymlink(t *testing.T) {
 	t.Setenv("HERDR_PLUGIN_STATE_DIR", t.TempDir())
 	dir := t.TempDir()
@@ -230,7 +213,7 @@ func TestEnsureSpaceDefinitionIDWritesThroughSymlink(t *testing.T) {
 	if err := os.Symlink(target, link); err != nil {
 		t.Fatal(err)
 	}
-	def, err := EnsureDefinitionID(link)
+	def, err := ensureDefinitionID(link)
 	if err != nil {
 		t.Fatal(err)
 	}

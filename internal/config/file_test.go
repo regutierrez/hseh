@@ -16,28 +16,31 @@ func writeConfig(t *testing.T, body string) {
 	}
 }
 
-func TestPopupSizeDefaultsMatchManifest(t *testing.T) {
+func TestLoadDefaultsWithoutFile(t *testing.T) {
 	t.Setenv("HERDR_PLUGIN_CONFIG_DIR", t.TempDir())
-	width, height, errs := LoadPopupSize()
+	settings, errs := Load()
 	if len(errs) != 0 {
 		t.Fatalf("errs %v", errs)
 	}
-	if width.Param() != "85%" || height.Param() != "80%" {
-		t.Fatalf("defaults width=%v height=%v", width.Param(), height.Param())
+	if settings.PopupWidth.Param() != "85%" || settings.PopupHeight.Param() != "80%" {
+		t.Fatalf("popup defaults width=%v height=%v", settings.PopupWidth.Param(), settings.PopupHeight.Param())
+	}
+	if settings.WidePreviewMinColumns != DefaultWidePreviewMinColumns || settings.PreviewPoll.Milliseconds() != DefaultPreviewPollMilliseconds {
+		t.Fatalf("defaults %+v", settings)
 	}
 }
 
-func TestPopupSizeAcceptsPercentAndCells(t *testing.T) {
-	writeConfig(t, "popup_width = \"70%\"\npopup_height = 30\n")
-	width, height, errs := LoadPopupSize()
+func TestLoadReadsEveryKey(t *testing.T) {
+	writeConfig(t, "popup_width = \"70%\"\npopup_height = 30\nwide_preview_min_columns = 40\npreview_poll_ms = 250\ntrace_file = \"/tmp/t\"\n")
+	settings, errs := Load()
 	if len(errs) != 0 {
 		t.Fatalf("errs %v", errs)
 	}
-	if width.Param() != "70%" {
-		t.Fatalf("width param %#v", width.Param())
+	if settings.PopupWidth.Param() != "70%" || settings.PopupHeight.Param() != 30 {
+		t.Fatalf("popup %#v %#v", settings.PopupWidth.Param(), settings.PopupHeight.Param())
 	}
-	if height.Param() != 30 {
-		t.Fatalf("height param %#v", height.Param())
+	if settings.WidePreviewMinColumns != 40 || settings.PreviewPoll.Milliseconds() != 250 || settings.TraceFile != "/tmp/t" {
+		t.Fatalf("settings %+v", settings)
 	}
 }
 
@@ -51,15 +54,15 @@ func TestPopupSizeInvalidFallsBackPerDimension(t *testing.T) {
 	}
 	for body, want := range cases {
 		writeConfig(t, body+"popup_height = \"50%\"\n")
-		width, height, errs := LoadPopupSize()
+		settings, errs := Load()
 		if len(errs) != 1 || !strings.Contains(errs[0], want) {
 			t.Fatalf("%q: errs %v, want one mentioning %q", body, errs, want)
 		}
-		if width != DefaultPopupWidth {
-			t.Fatalf("%q: invalid width did not fall back: %v", body, width)
+		if settings.PopupWidth != DefaultPopupWidth {
+			t.Fatalf("%q: invalid width did not fall back: %v", body, settings.PopupWidth)
 		}
-		if height.Param() != "50%" {
-			t.Fatalf("%q: valid height lost: %v", body, height.Param())
+		if settings.PopupHeight.Param() != "50%" {
+			t.Fatalf("%q: valid height lost: %v", body, settings.PopupHeight.Param())
 		}
 	}
 }

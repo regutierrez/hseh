@@ -11,8 +11,7 @@ import (
 	"github.com/regutierrez/hseh/internal/config"
 )
 
-// HSEH_TRACE (or trace_file in hseh.toml) names an append-only file that
-// receives one line per timed event. Unset (the default) makes every hook a nil check. Lines look like:
+// Lines look like:
 //
 //	+123.456ms socket.call dur=0.482ms method=session.snapshot bytes=16645
 //
@@ -29,35 +28,35 @@ var (
 // /proc on Linux (10ms resolution). It exposes work done before main, such as
 // Bubble Tea's package init querying the terminal for its background color,
 // which blocks for termenv's 5s timeout on terminals that never answer.
-// Returns -1 when unavailable.
-func ProcessAge() time.Duration {
+// ok is false where /proc is unavailable.
+func ProcessAge() (age time.Duration, ok bool) {
 	stat, err := os.ReadFile("/proc/self/stat")
 	if err != nil {
-		return -1
+		return 0, false
 	}
 	uptime, err := os.ReadFile("/proc/uptime")
 	if err != nil {
-		return -1
+		return 0, false
 	}
 	text := string(stat)
 	closeParen := strings.LastIndex(text, ")")
 	if closeParen < 0 {
-		return -1
+		return 0, false
 	}
 	fields := strings.Fields(text[closeParen+2:])
 	if len(fields) < 20 {
-		return -1
+		return 0, false
 	}
 	startTicks, err := strconv.ParseFloat(fields[19], 64)
 	if err != nil {
-		return -1
+		return 0, false
 	}
 	upSeconds, err := strconv.ParseFloat(strings.Fields(string(uptime))[0], 64)
 	if err != nil {
-		return -1
+		return 0, false
 	}
 	const clockTicksPerSecond = 100
-	return time.Duration((upSeconds - startTicks/clockTicksPerSecond) * float64(time.Second))
+	return time.Duration((upSeconds - startTicks/clockTicksPerSecond) * float64(time.Second)), true
 }
 
 func Enabled() bool {
@@ -66,14 +65,15 @@ func Enabled() bool {
 		if path == "" {
 			// Herdr spawns plugin processes with its own environment, so the
 			// plugin config file is the way to trace popups and actions.
-			cfg, _ := config.LoadFile()
-			path = cfg.TraceFile
+			settings, _ := config.Load()
+			path = settings.TraceFile
 		}
 		if path == "" {
 			return
 		}
 		file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
+			fmt.Fprintf(os.Stderr, "hseh trace: %v\n", err)
 			return
 		}
 		out = file

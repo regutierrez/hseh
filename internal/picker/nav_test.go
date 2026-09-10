@@ -41,26 +41,6 @@ func TestQueryRetainedAcrossViewsAndClearedOnRebuild(t *testing.T) {
 	}
 }
 
-func TestPreviewDoesNotChangePreselectHistory(t *testing.T) {
-	history := focus.EmptyHistory(herdr.ContinuityWitness{})
-	history.Spaces = []string{"w2", "w1"}
-	snapshot := herdr.SessionSnapshot{
-		FocusedWorkspaceID: "w1",
-		Workspaces: []herdr.WorkspaceRow{
-			{WorkspaceID: "w1", Label: "alpha"},
-			{WorkspaceID: "w2", Label: "beta"},
-		},
-	}
-	m := newModel("spaces", snapshot, history, defaultSidebarLayout(), 0, 40)
-	if m.selectedID != SelectionID(KindSpace, "w2") {
-		t.Fatalf("preselect %s", m.selectedID)
-	}
-	m.previewText = "ticks"
-	if m.history.Spaces[0] != "w2" {
-		t.Fatalf("preview mutated MRU: %v", m.history.Spaces)
-	}
-}
-
 func TestNarrowStopsPreviewReadsAndWideResumes(t *testing.T) {
 	snapshot := herdr.SessionSnapshot{Version: "0.9.0", Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w2", Label: "beta", ActiveTabID: "w2:t1"}}, Layouts: []herdr.PaneLayout{{TabID: "w2:t1", FocusedPaneID: "w2:p1"}}}
 	srv := &hsehtest.Server{Snapshot: snapshot, PaneReadText: "tick"}

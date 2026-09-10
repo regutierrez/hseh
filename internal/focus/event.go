@@ -11,12 +11,12 @@ func ApplyPluginEvent(name string, data herdr.PluginEventData) error {
 	workspaceID := data.WorkspaceID
 	paneID := herdr.PluginEventPaneID(data)
 	stateDir := config.StateDir()
-	return WithLock(stateDir, func() error {
+	return withLock(stateDir, func() error {
 		snapshot, witness, err := herdr.LoadSessionSnapshot()
 		if err != nil {
 			return err
 		}
-		history, err := LoadValidated(stateDir, witness)
+		history, err := loadValidated(stateDir, witness)
 		if err != nil {
 			return err
 		}
@@ -25,12 +25,12 @@ func ApplyPluginEvent(name string, data herdr.PluginEventData) error {
 			if workspaceID == "" {
 				return fmt.Errorf("hseh event: workspace.focused missing workspace_id")
 			}
-			history = RecordWorkspaceFocus(history, workspaceID)
+			history = recordWorkspaceFocus(history, workspaceID)
 		case "workspace.closed":
 			if workspaceID == "" {
 				return fmt.Errorf("hseh event: workspace.closed missing workspace_id")
 			}
-			history = RemoveWorkspace(history, workspaceID)
+			history = removeWorkspace(history, workspaceID)
 		case "pane.focused":
 			if paneID == "" {
 				return fmt.Errorf("hseh event: pane.focused missing pane_id")
@@ -41,13 +41,13 @@ func ApplyPluginEvent(name string, data herdr.PluginEventData) error {
 			if paneID == "" {
 				return fmt.Errorf("hseh event: %s missing pane_id", name)
 			}
-			history = ClearPaneOccupant(history, paneID)
+			history = clearPaneOccupant(history, paneID)
 		case "pane.moved":
 			previous := data.PreviousPaneID
 			if previous == "" || paneID == "" {
 				return fmt.Errorf("hseh event: pane.moved missing previous_pane_id or pane")
 			}
-			history = RekeyMovedPaneOccupant(history, previous, paneID)
+			history = rekeyMovedPaneOccupant(history, previous, paneID)
 		case "pane.agent_detected":
 			if paneID == "" {
 				return fmt.Errorf("hseh event: pane.agent_detected missing pane_id")
@@ -75,7 +75,7 @@ func ensurePaneOccupantFromLive(history History, snapshot herdr.SessionSnapshot,
 		}
 	}
 	if _, ok := history.Occupants[paneID]; ok {
-		return ClearPaneOccupant(history, paneID)
+		return clearPaneOccupant(history, paneID)
 	}
 	return history
 }

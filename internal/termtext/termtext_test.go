@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestAllowVisiblePreviewANSIKeepsSGRDropsOSC(t *testing.T) {
+func TestKeepSGRKeepsSGRDropsOSC(t *testing.T) {
 	input := "ok\x1b[32mgreen\x1b[0m\x1b]52;c;SECRET\x07\x1b[2J\x1b[Hdone"
 	got := KeepSGR(input)
 	if got != "ok\x1b[32mgreen\x1b[0mdone" {
@@ -13,14 +13,14 @@ func TestAllowVisiblePreviewANSIKeepsSGRDropsOSC(t *testing.T) {
 	}
 }
 
-func TestAllowVisiblePreviewANSIDropsClipboardBEL(t *testing.T) {
+func TestKeepSGRDropsClipboardBEL(t *testing.T) {
 	got := KeepSGR("x\x07y")
 	if got != "xy" {
 		t.Fatalf("got %q", got)
 	}
 }
 
-func TestAllowVisiblePreviewANSIDropsC1AndInvalidBytes(t *testing.T) {
+func TestKeepSGRDropsC1AndInvalidBytes(t *testing.T) {
 	input := "text\u009b2J\u009d52;c;YQ==\u009ctail\x1b"
 	got := KeepSGR(input)
 	for _, r := range got {
@@ -33,7 +33,7 @@ func TestAllowVisiblePreviewANSIDropsC1AndInvalidBytes(t *testing.T) {
 	}
 }
 
-func TestAllowVisiblePreviewANSINormalizesCRLFDropsBareCR(t *testing.T) {
+func TestKeepSGRNormalizesCRLFDropsBareCR(t *testing.T) {
 	got := KeepSGR("a\r\nb\rc\t")
 	if strings.ContainsRune(got, '\r') {
 		t.Fatalf("CR survived: %q", got)
@@ -43,7 +43,7 @@ func TestAllowVisiblePreviewANSINormalizesCRLFDropsBareCR(t *testing.T) {
 	}
 }
 
-func TestStripTerminalControlsRemovesSGR(t *testing.T) {
+func TestStripControlsRemovesSGR(t *testing.T) {
 	got := StripControls("a\x1b[31mx\x1b[0mb")
 	if got != "axb" {
 		t.Fatalf("got %q", got)

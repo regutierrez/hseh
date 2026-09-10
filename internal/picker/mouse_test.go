@@ -1,8 +1,6 @@
 package picker
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -11,31 +9,6 @@ import (
 	"github.com/regutierrez/hseh/internal/herdr"
 	"github.com/regutierrez/hseh/internal/hsehtest"
 )
-
-func TestDefaultWidePreviewMinColumnsIs100(t *testing.T) {
-	if config.DefaultWidePreviewMinColumns != 100 {
-		t.Fatalf("default %d", config.DefaultWidePreviewMinColumns)
-	}
-	cols, errs := config.LoadWidePreviewMinColumns()
-	if len(errs) != 0 {
-		t.Fatalf("errs %v", errs)
-	}
-	if cols != 100 {
-		t.Fatalf("unconfigured load %d", cols)
-	}
-}
-
-func TestWidePreviewMinColumnsConfigOverride(t *testing.T) {
-	dir := t.TempDir()
-	t.Setenv("HERDR_PLUGIN_CONFIG_DIR", dir)
-	if err := os.WriteFile(filepath.Join(dir, "hseh.toml"), []byte("wide_preview_min_columns = 40\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	cols, errs := config.LoadWidePreviewMinColumns()
-	if len(errs) != 0 || cols != 40 {
-		t.Fatalf("override cols=%d errs=%v", cols, errs)
-	}
-}
 
 func TestPreviewStackedAt99SideBySideAt100(t *testing.T) {
 	m := model{
@@ -46,9 +19,6 @@ func TestPreviewStackedAt99SideBySideAt100(t *testing.T) {
 	}
 	next, cmd := m.Update(tea.WindowSizeMsg{Width: 99, Height: 24})
 	got := next.(model)
-	if got.wideEnoughForPreview() {
-		t.Fatal("99-column popup content must not split side by side")
-	}
 	if got.frame().mode != previewStacked {
 		t.Fatalf("99-column popup must stack the preview, mode=%d", got.frame().mode)
 	}
@@ -62,7 +32,7 @@ func TestPreviewStackedAt99SideBySideAt100(t *testing.T) {
 	got.previewInFlight = false
 	next, cmd = got.Update(tea.WindowSizeMsg{Width: 100, Height: 24})
 	got = next.(model)
-	if !got.wideEnoughForPreview() {
+	if got.frame().mode != previewSide {
 		t.Fatal("100-column popup content must show preview side by side")
 	}
 	if cmd != nil {
@@ -81,7 +51,7 @@ func TestClickSelectsWrappedMultilineUnicodeRow(t *testing.T) {
 			{ID: "b", Rows: []string{"中文中文中文中文中文", "beta-tail"}},
 		},
 	}
-	layout := m.buildListLayout(m.listPaneWidth(), m.bodyHeight())
+	layout := m.buildListLayout(m.frame().listW, m.frame().listH)
 	hitY := -1
 	for i, id := range layout.ItemIDs {
 		if id == "b" {
@@ -112,16 +82,16 @@ func TestClickIgnoresHeaderPreviewSeparatorAndPadding(t *testing.T) {
 	if id := m.itemIDAtMouse(2, 0); id != "" {
 		t.Fatalf("header click selected %q", id)
 	}
-	for y := m.height - m.searchPaneHeight(); y < m.height; y++ {
+	for y := m.height - m.frame().searchH; y < m.height; y++ {
 		if id := m.itemIDAtMouse(2, y); id != "" {
 			t.Fatalf("search click selected %q", id)
 		}
 	}
-	listWidth := m.listPaneWidth()
+	listWidth := m.frame().listW
 	if id := m.itemIDAtMouse(listWidth+1, 2); id != "" {
 		t.Fatalf("preview click selected %q", id)
 	}
-	layout := m.buildListLayout(listWidth, m.bodyHeight())
+	layout := m.buildListLayout(listWidth, m.frame().listH)
 	sepY := -1
 	for i, id := range layout.ItemIDs {
 		if i > 0 && id == "" && layout.Lines[i] != "" || (id == "" && i > 0 && i < len(layout.ItemIDs)-1) {
@@ -147,7 +117,7 @@ func TestClickScrolledVisibleRow(t *testing.T) {
 		items = append(items, Item{ID: string(rune('a' + i)), Rows: []string{"row-" + string(rune('a'+i))}})
 	}
 	m := model{width: 24, height: 20, widePreviewMinCols: 100, selectedID: items[len(items)-1].ID, visible: items}
-	layout := m.buildListLayout(m.listPaneWidth(), m.bodyHeight())
+	layout := m.buildListLayout(m.frame().listW, m.frame().listH)
 	var firstID string
 	for _, id := range layout.ItemIDs {
 		if id != "" && id != m.selectedID {
@@ -175,7 +145,7 @@ func TestMouseReleaseAndRightClickDoNotSelect(t *testing.T) {
 		width: 40, height: 8, widePreviewMinCols: 100, selectedID: "a",
 		visible: []Item{{ID: "a", Rows: []string{"alpha"}}, {ID: "b", Rows: []string{"beta"}}},
 	}
-	layout := m.buildListLayout(m.listPaneWidth(), m.bodyHeight())
+	layout := m.buildListLayout(m.frame().listW, m.frame().listH)
 	y := 0
 	for i, id := range layout.ItemIDs {
 		if id == "b" {
@@ -211,7 +181,7 @@ func TestClickSelectsWithoutFocusingHerdr(t *testing.T) {
 	t.Setenv("HERDR_SESSION", "hseh-test")
 	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), 0, 40)
 	m.width, m.height = 80, 12
-	layout := m.buildListLayout(m.listPaneWidth(), m.bodyHeight())
+	layout := m.buildListLayout(m.frame().listW, m.frame().listH)
 	y := -1
 	for i, id := range layout.ItemIDs {
 		if id == SelectionID(KindSpace, "w2") {

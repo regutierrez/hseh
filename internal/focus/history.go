@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"github.com/regutierrez/hseh/internal/config"
 	"github.com/regutierrez/hseh/internal/herdr"
-	"github.com/regutierrez/hseh/internal/trace"
+	"github.com/regutierrez/hseh/internal/lockfile"
 )
 
 const workspaceSwitchCycleTimeoutMs = 500
@@ -31,7 +30,8 @@ type PaneOccupant struct {
 	SessionValue string `json:"session_value,omitempty"`
 }
 
-// WorkspaceSwitchCycle is the in-progress 500ms previous-space cycle.
+// WorkspaceSwitchCycle is an in-progress previous-space cycle: repeated switches within
+// workspaceSwitchCycleTimeoutMs walk the sidebar order instead of bouncing between two spaces.
 type WorkspaceSwitchCycle struct {
 	Order        []string `json:"order"`
 	Target       string   `json:"target"`
@@ -69,7 +69,7 @@ func LoadFile(stateDir string) (History, error) {
 	payload, err := os.ReadFile(historyStatePath(stateDir))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return History{Occupants: map[string]PaneOccupant{}}, nil
+			return EmptyHistory(herdr.ContinuityWitness{}), nil
 		}
 		return History{}, fmt.Errorf("hseh history: read: %w", err)
 	}
@@ -105,25 +105,26 @@ func WriteFile(stateDir string, history History) error {
 	return nil
 }
 
-func WithLock(stateDir string, fn func() error) error {
-	if err := os.MkdirAll(config.SessionHistoryDir(stateDir), 0o700); err != nil {
-		return fmt.Errorf("hseh history: mkdir: %w", err)
-	}
-	file, err := os.OpenFile(historyLockPath(stateDir), os.O_RDWR|os.O_CREATE, 0o600)
-	if err != nil {
-		return fmt.Errorf("hseh history: lock: %w", err)
-	}
-	defer file.Close()
-	lockSpan := trace.Span("history.flock")
-	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX); err != nil {
-		return fmt.Errorf("hseh history: flock: %w", err)
-	}
-	lockSpan()
-	return fn()
+func withLock(stateDir string, fn func() error) error {
+	return lockfile.WithExclusive(historyLockPath(stateDir), fn)
 }
 
-// LoadValidated loads history or drops it when the server process changed.
-func LoadValidated(stateDir string, live herdr.ContinuityWitness) (History, error) {
+// update applies fn to the witness-checked history under the session lock and persists the result.
+func update(stateDir string, witness herdr.ContinuityWitness, fn func(History) History) (History, error) {
+	var history History
+	err := withLock(stateDir, func() error {
+		loaded, err := loadValidated(stateDir, witness)
+		if err != nil {
+			return err
+		}
+		history = fn(loaded)
+		return WriteFile(stateDir, history)
+	})
+	return history, err
+}
+
+// loadValidated loads history or drops it when the server process changed.
+func loadValidated(stateDir string, live herdr.ContinuityWitness) (History, error) {
 	stored, err := LoadFile(stateDir)
 	if err != nil {
 		return EmptyHistory(live), err
@@ -228,27 +229,21 @@ func CurrentAgentLiveID(history History, paneID string) (AgentLiveID, bool) {
 }
 
 func rememberPaneGeneration(history *History, paneID string, generation int) {
-	if history.LastOccupantGeneration == nil {
-		history.LastOccupantGeneration = map[string]int{}
-	}
 	if generation > history.LastOccupantGeneration[paneID] {
 		history.LastOccupantGeneration[paneID] = generation
 	}
 }
 
 func nextPaneGeneration(history History, paneID string) int {
-	n := 0
-	if history.LastOccupantGeneration != nil {
-		n = history.LastOccupantGeneration[paneID]
-	}
+	n := history.LastOccupantGeneration[paneID]
 	if occupant, ok := history.Occupants[paneID]; ok && occupant.Generation > n {
 		n = occupant.Generation
 	}
 	return n + 1
 }
 
-// RecordWorkspaceFocus records a space as most recently used unless plugin-pending.
-func RecordWorkspaceFocus(history History, workspaceID string) History {
+// recordWorkspaceFocus records a space as most recently used unless plugin-pending.
+func recordWorkspaceFocus(history History, workspaceID string) History {
 	for index, id := range history.Pending {
 		if id == workspaceID {
 			history.Pending = append(history.Pending[:index], history.Pending[index+1:]...)
@@ -260,8 +255,8 @@ func RecordWorkspaceFocus(history History, workspaceID string) History {
 	return history
 }
 
-// RemoveWorkspace drops a closed space from history.
-func RemoveWorkspace(history History, workspaceID string) History {
+// removeWorkspace drops a closed space from history.
+func removeWorkspace(history History, workspaceID string) History {
 	history.Spaces = removeString(history.Spaces, workspaceID)
 	history.Pending = removeString(history.Pending, workspaceID)
 	if history.Cycle != nil {
@@ -283,20 +278,18 @@ func RecordAgentPaneFocus(history History, paneID string) History {
 	return history
 }
 
-// RekeyMovedPaneOccupant keeps the same occupant under the new pane id.
-func RekeyMovedPaneOccupant(history History, previousPaneID, paneID string) History {
+// rekeyMovedPaneOccupant keeps the same occupant under the new pane id.
+func rekeyMovedPaneOccupant(history History, previousPaneID, paneID string) History {
 	occupant, ok := history.Occupants[previousPaneID]
 	if !ok {
 		return history
 	}
 	delete(history.Occupants, previousPaneID)
 	history.Occupants[paneID] = occupant
-	if history.LastOccupantGeneration != nil {
-		if last, ok := history.LastOccupantGeneration[previousPaneID]; ok {
-			delete(history.LastOccupantGeneration, previousPaneID)
-			if last > history.LastOccupantGeneration[paneID] {
-				history.LastOccupantGeneration[paneID] = last
-			}
+	if last, ok := history.LastOccupantGeneration[previousPaneID]; ok {
+		delete(history.LastOccupantGeneration, previousPaneID)
+		if last > history.LastOccupantGeneration[paneID] {
+			history.LastOccupantGeneration[paneID] = last
 		}
 	}
 	rememberPaneGeneration(&history, paneID, occupant.Generation)
@@ -308,8 +301,8 @@ func RekeyMovedPaneOccupant(history History, previousPaneID, paneID string) Hist
 	return history
 }
 
-// ClearPaneOccupant drops a pane that no longer hosts that occupant.
-func ClearPaneOccupant(history History, paneID string) History {
+// clearPaneOccupant drops a pane that no longer hosts that occupant.
+func clearPaneOccupant(history History, paneID string) History {
 	if occupant, ok := history.Occupants[paneID]; ok {
 		rememberPaneGeneration(&history, paneID, occupant.Generation)
 	}
@@ -327,7 +320,7 @@ func ClearPaneOccupant(history History, paneID string) History {
 // ApplyVerifiedOccupantTransition advances generation only when the occupant changed.
 func ApplyVerifiedOccupantTransition(history History, paneID, agentKind, sessionVal string, released bool) History {
 	if released || agentKind == "" {
-		return ClearPaneOccupant(history, paneID)
+		return clearPaneOccupant(history, paneID)
 	}
 	existing, ok := history.Occupants[paneID]
 	if !ok {
@@ -336,9 +329,7 @@ func ApplyVerifiedOccupantTransition(history History, paneID, agentKind, session
 		rememberPaneGeneration(&history, paneID, gen)
 		return history
 	}
-	sameKind := existing.AgentKind == agentKind
-	sameSession := existing.SessionValue == sessionVal || (existing.SessionValue == "" && sessionVal == "")
-	if sameKind && sameSession {
+	if existing.AgentKind == agentKind && existing.SessionValue == sessionVal {
 		return history
 	}
 	rememberPaneGeneration(&history, paneID, existing.Generation)
@@ -483,14 +474,19 @@ func AgentPriorityRank(status string) int {
 
 // LoadPruned loads witness-checked history and drops dead targets.
 func LoadPruned(snapshot herdr.SessionSnapshot, witness herdr.ContinuityWitness) (History, error) {
-	var history History
-	err := WithLock(config.StateDir(), func() error {
-		loaded, loadErr := LoadValidated(config.StateDir(), witness)
-		if loadErr != nil {
-			return loadErr
-		}
-		history = Prune(loaded, snapshot)
-		return WriteFile(config.StateDir(), history)
+	return update(config.StateDir(), witness, func(history History) History {
+		return Prune(history, snapshot)
 	})
-	return history, err
+}
+
+// SwitchWorkspace records the focused space and returns the one to switch to: the
+// previous space, or the next in sidebar order while a cycle is in progress. An empty
+// target means there is nothing to switch to.
+func SwitchWorkspace(snapshot herdr.SessionSnapshot, witness herdr.ContinuityWitness, nowMs int64) (string, error) {
+	var target string
+	_, err := update(config.StateDir(), witness, func(history History) History {
+		history, target = SelectNextWorkspace(history, snapshot, nowMs)
+		return history
+	})
+	return target, err
 }

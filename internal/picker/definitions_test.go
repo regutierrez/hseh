@@ -17,12 +17,12 @@ func TestUnopenedDefinitionListedUntilAssociated(t *testing.T) {
 	work := t.TempDir()
 	def := space.Definition{ID: "def-list", Name: "listed", ResolvedDir: work, WorkingDir: work, Description: "desc"}
 	snapshot := herdr.SessionSnapshot{Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w1", Label: "live"}}}
-	items := AppendUnopenedDefinitionItems(BuildItemsWithLayout("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout()), "spaces", snapshot, []space.Definition{def}, nil, nil)
+	items := AppendUnopenedDefinitionItems(BuildItemsWithLayout("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil), "spaces", snapshot, []space.Definition{def}, nil, nil, nil)
 	if len(items) != 2 || items[1].Kind != KindDefinition {
 		t.Fatalf("%+v", items)
 	}
 	records := []space.AssociationRecord{{DefinitionID: "def-list", ResolvedDir: work, WorkspaceID: "w1"}}
-	hidden := AppendUnopenedDefinitionItems(BuildItemsWithLayout("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout()), "spaces", snapshot, []space.Definition{def}, records, nil)
+	hidden := AppendUnopenedDefinitionItems(BuildItemsWithLayout("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil), "spaces", snapshot, []space.Definition{def}, records, nil, nil)
 	if len(hidden) != 1 {
 		t.Fatalf("associated definition still listed: %+v", hidden)
 	}
@@ -84,9 +84,8 @@ func TestPickerEscapeCancelsDefinitionAccept(t *testing.T) {
 	time.Sleep(30 * time.Millisecond)
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	m = next.(model)
-	msg := <-done
-	if _, ok := msg.(errorMsg); !ok && msg != nil {
-		if _, ok := msg.(acceptedMsg); ok {
+	if msg := <-done; msg != nil {
+		if _, accepted := msg.(acceptedMsg); accepted {
 			t.Fatal("escape accepted create")
 		}
 	}

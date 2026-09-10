@@ -18,12 +18,8 @@ var requestSeq atomic.Uint64
 // readContinuityWitness is swapped by tests to observe when the witness is read relative to the request write.
 var readContinuityWitness = ReadContinuityWitnessFromConn
 
-// Call sends one newline-delimited JSON request and decodes the result.
-func Call(method string, params any, result any) (ContinuityWitness, error) {
-	return CallContext(context.Background(), method, params, result)
-}
-
-// CallContext closes the socket when ctx is cancelled.
+// CallContext sends one newline-delimited JSON request and decodes the result into
+// result (nil discards it). The socket is closed when ctx is cancelled.
 func CallContext(ctx context.Context, method string, params any, result any) (ContinuityWitness, error) {
 	socketPath := config.SocketPath()
 	if socketPath == "" {
@@ -74,10 +70,16 @@ func CallContext(ctx context.Context, method string, params any, result any) (Co
 	}
 
 	// Peer credentials are fixed at connect, so the witness reads equally well
-	// while the reply is in flight or after the peer has closed.
+	// while the reply is in flight or after the peer has closed. A failed read
+	// (always, off Linux) yields a zero witness: history and associations then
+	// fail their continuity check and reset. The trace line is the only signal.
 	witnessSpan := trace.Span("socket.witness", "method", method)
-	witness, _ := readContinuityWitness(conn, socketPath)
-	witnessSpan()
+	witness, witnessErr := readContinuityWitness(conn, socketPath)
+	if witnessErr != nil {
+		witnessSpan("err", witnessErr)
+	} else {
+		witnessSpan()
+	}
 
 	readSpan := trace.Span("socket.reply", "method", method)
 	line, err := readReply(ctx, conn, socketPath, method, payload)
@@ -130,16 +132,14 @@ func WithHedge(ctx context.Context) context.Context {
 	return context.WithValue(ctx, hedgeKey{}, true)
 }
 
-// Hedged reports whether ctx carries the WithHedge marker. It lets callers
-// (and tests) confirm a latency-visible read was marked before it went out.
+// Hedged reports whether ctx carries the WithHedge marker.
 func Hedged(ctx context.Context) bool {
 	allowed, _ := ctx.Value(hedgeKey{}).(bool)
 	return allowed
 }
 
 func hedgeAllowed(ctx context.Context, method string) bool {
-	allowed, _ := ctx.Value(hedgeKey{}).(bool)
-	return allowed && idempotentMethod(method)
+	return Hedged(ctx) && idempotentMethod(method)
 }
 
 // idempotentMethod reports methods that are safe to send twice.
@@ -161,7 +161,8 @@ type reply struct {
 
 // readReply reads one reply line. For hedge-allowed calls (see WithHedge)
 // it hedges: if the first connection is silent past hedgeDelay, the request
-// is resent on a fresh connection and the first reply wins. The loser is closed.
+// is resent on a fresh connection and the first reply wins. The caller owns
+// conn; the hedge connection is always closed before returning.
 func readReply(ctx context.Context, conn net.Conn, socketPath, method string, payload []byte) ([]byte, error) {
 	if !hedgeAllowed(ctx, method) {
 		return bufio.NewReader(conn).ReadBytes('\n')
@@ -175,11 +176,11 @@ func readReply(ctx context.Context, conn net.Conn, socketPath, method string, pa
 	timer := time.NewTimer(hedgeDelay)
 	defer timer.Stop()
 	var hedge net.Conn
-	closeLoser := func(winner net.Conn) {
-		if hedge != nil && hedge != winner {
+	defer func() {
+		if hedge != nil {
 			hedge.Close()
 		}
-	}
+	}()
 	for {
 		select {
 		case r := <-replies:
@@ -189,11 +190,15 @@ func readReply(ctx context.Context, conn net.Conn, socketPath, method string, pa
 				continue
 			}
 			if r.err != nil && r.conn == hedge && conn != nil {
+				hedge.Close()
 				hedge = nil
 				continue
 			}
-			closeLoser(r.conn)
-			trace.Event("socket.hedge", "method", method, "winner", map[bool]string{true: "hedge", false: "primary"}[r.conn == hedge && hedge != nil])
+			winner := "primary"
+			if r.conn == hedge {
+				winner = "hedge"
+			}
+			trace.Event("socket.hedge", "method", method, "winner", winner)
 			return r.line, r.err
 		case <-timer.C:
 			if hedge != nil {
@@ -211,9 +216,6 @@ func readReply(ctx context.Context, conn net.Conn, socketPath, method string, pa
 			hedge = c
 			go read(c)
 		case <-ctx.Done():
-			if hedge != nil {
-				hedge.Close()
-			}
 			return nil, ctx.Err()
 		}
 	}

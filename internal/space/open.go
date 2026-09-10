@@ -25,7 +25,19 @@ type OpenResult struct {
 	WorkspaceID       string
 	SubmittedCommands int
 	DefinitionID      string
-	ResolvedDir       string
+}
+
+// loadDefinition finds one definition by id; cmd names the command for error messages.
+func loadDefinition(cmd, definitionID string) (Definition, error) {
+	defs, errs := LoadDefinitions(config.SpaceDefinitionsDir())
+	def, ok := findDefinitionByID(defs, definitionID)
+	if ok {
+		return def, nil
+	}
+	if len(errs) > 0 {
+		return Definition{}, fmt.Errorf("hseh %s %s: not found (%s)", cmd, definitionID, strings.Join(errs, "; "))
+	}
+	return Definition{}, fmt.Errorf("hseh %s: definition %s not found", cmd, definitionID)
 }
 
 func withOpenLock(ctx context.Context, fn func() error) error {
@@ -84,14 +96,14 @@ func workspaceDirectorySignal(snapshot herdr.SessionSnapshot, workspace herdr.Wo
 	return workspaceUniformPaneDir(snapshot, workspace.WorkspaceID)
 }
 
-func eligibleAdoptionWorkspaceIDs(snapshot herdr.SessionSnapshot, history focus.History, state AssociationState, definitionID, resolvedDir string) []string {
+func eligibleAdoptionWorkspaceIDs(snapshot herdr.SessionSnapshot, history focus.History, state AssociationState, identity AssociationRecord) []string {
 	var eligible []string
 	for _, workspace := range snapshot.Workspaces {
-		if workspaceAssociatedToOtherDefinition(state, workspace.WorkspaceID, definitionID, resolvedDir) {
+		if workspaceAssociatedToOtherDefinition(state, workspace.WorkspaceID, identity) {
 			continue
 		}
 		dir, ok := workspaceDirectorySignal(snapshot, workspace)
-		if !ok || dir != resolvedDir {
+		if !ok || dir != identity.ResolvedDir {
 			continue
 		}
 		eligible = append(eligible, workspace.WorkspaceID)
@@ -119,13 +131,19 @@ func eligibleAdoptionWorkspaceIDs(snapshot herdr.SessionSnapshot, history focus.
 
 func persistCreatedAssociation(stateDir string, state AssociationState, record AssociationRecord) error {
 	state = upsertAssociation(state, record)
-	state = removeUnresolvedAssociation(state, record.DefinitionID, record.ResolvedDir)
+	state = removeUnresolvedAssociation(state, record)
 	return WriteAssociationFile(stateDir, state)
 }
 
+// createSpace checks every directory the layout needs before touching Herdr, so an
+// authoring mistake cannot leave a half-built workspace behind.
 func createSpace(ctx context.Context, stateDir string, state AssociationState, def Definition) (OpenResult, error) {
-	if err := preflightDirs(def); err != nil {
-		return OpenResult{}, err
+	if _, err := requireExistingDir(def.ResolvedDir); err != nil {
+		return OpenResult{}, fmt.Errorf("hseh create %s: %w", def.ID, err)
+	}
+	dirs, err := resolvePaneDirs(def.ResolvedDir, def.Tabs)
+	if err != nil {
+		return OpenResult{}, fmt.Errorf("hseh create %s: %w", def.ID, err)
 	}
 	if err := ctx.Err(); err != nil {
 		return OpenResult{}, err
@@ -134,29 +152,22 @@ func createSpace(ctx context.Context, stateDir string, state AssociationState, d
 	if err != nil {
 		return OpenResult{}, fmt.Errorf("hseh create %s: workspace.create: %w", def.ID, err)
 	}
-	record := AssociationRecord{DefinitionID: def.ID, ResolvedDir: def.ResolvedDir, WorkspaceID: workspaceID}
+	record := def.identity()
+	record.WorkspaceID = workspaceID
 	if err := persistCreatedAssociation(stateDir, state, record); err != nil {
-		return OpenResult{Action: ActionCreate, WorkspaceID: workspaceID, DefinitionID: def.ID, ResolvedDir: def.ResolvedDir}, fmt.Errorf("hseh create %s: persist association after workspace.create %s: %w", def.ID, workspaceID, err)
+		return OpenResult{Action: ActionCreate, WorkspaceID: workspaceID, DefinitionID: def.ID}, fmt.Errorf("hseh create %s: persist association after workspace.create %s: %w", def.ID, workspaceID, err)
 	}
-	submitted, err := applyLayout(ctx, def, workspaceID, rootTabID, rootPaneID)
-	result := OpenResult{Action: ActionCreate, WorkspaceID: workspaceID, SubmittedCommands: submitted, DefinitionID: def.ID, ResolvedDir: def.ResolvedDir}
-	if err != nil {
-		return result, err
-	}
-	return result, nil
+	submitted, err := applyLayout(ctx, def, dirs, workspaceID, rootTabID, rootPaneID)
+	return OpenResult{Action: ActionCreate, WorkspaceID: workspaceID, SubmittedCommands: submitted, DefinitionID: def.ID}, err
 }
 
 func openLocked(ctx context.Context, definitionID string) (OpenResult, error) {
 	if err := ctx.Err(); err != nil {
 		return OpenResult{}, err
 	}
-	defs, errs := LoadDefinitions(config.SpaceDefinitionsDir())
-	def, ok := FindDefinitionByID(defs, definitionID)
-	if !ok {
-		if len(errs) > 0 {
-			return OpenResult{}, fmt.Errorf("hseh open %s: not found (%s)", definitionID, strings.Join(errs, "; "))
-		}
-		return OpenResult{}, fmt.Errorf("hseh open: definition %s not found", definitionID)
+	def, err := loadDefinition("open", definitionID)
+	if err != nil {
+		return OpenResult{}, err
 	}
 	if err := ctx.Err(); err != nil {
 		return OpenResult{}, err
@@ -177,30 +188,27 @@ func openLocked(ctx context.Context, definitionID string) (OpenResult, error) {
 	if err := ctx.Err(); err != nil {
 		return OpenResult{}, err
 	}
-	if workspaceID, ok := exactLiveAssociation(state, snapshot, def.ID, def.ResolvedDir); ok {
+	if workspaceID, ok := exactLiveAssociation(state, snapshot, def.identity()); ok {
 		if err := herdr.FocusWorkspaceContext(ctx, workspaceID); err != nil {
 			return OpenResult{}, err
 		}
-		return OpenResult{Action: ActionFocus, WorkspaceID: workspaceID, DefinitionID: def.ID, ResolvedDir: def.ResolvedDir}, nil
+		return OpenResult{Action: ActionFocus, WorkspaceID: workspaceID, DefinitionID: def.ID}, nil
 	}
-	if identityHasUnresolvedAssociation(state, def.ID, def.ResolvedDir) {
+	if hasUnresolvedAssociation(state, def.identity()) {
 		return OpenResult{}, recoveryNeededError(def.ID)
 	}
-	eligible := eligibleAdoptionWorkspaceIDs(snapshot, history, state, def.ID, def.ResolvedDir)
+	eligible := eligibleAdoptionWorkspaceIDs(snapshot, history, state, def.identity())
 	if len(eligible) > 0 {
-		workspaceID := eligible[0]
-		state = upsertAssociation(state, AssociationRecord{
-			DefinitionID: def.ID,
-			ResolvedDir:  def.ResolvedDir,
-			WorkspaceID:  workspaceID,
-		})
+		record := def.identity()
+		record.WorkspaceID = eligible[0]
+		state = upsertAssociation(state, record)
 		if err := WriteAssociationFile(stateDir, state); err != nil {
 			return OpenResult{}, fmt.Errorf("hseh open %s: persist adoption: %w", def.ID, err)
 		}
-		if err := herdr.FocusWorkspaceContext(ctx, workspaceID); err != nil {
+		if err := herdr.FocusWorkspaceContext(ctx, record.WorkspaceID); err != nil {
 			return OpenResult{}, err
 		}
-		return OpenResult{Action: ActionAdopt, WorkspaceID: workspaceID, DefinitionID: def.ID, ResolvedDir: def.ResolvedDir}, nil
+		return OpenResult{Action: ActionAdopt, WorkspaceID: record.WorkspaceID, DefinitionID: def.ID}, nil
 	}
 	return createSpace(ctx, stateDir, state, def)
 }
@@ -210,9 +218,6 @@ func Open(ctx context.Context, definitionID string) (OpenResult, error) {
 	definitionID = strings.TrimSpace(definitionID)
 	if definitionID == "" {
 		return OpenResult{}, fmt.Errorf("hseh open: definition id is required")
-	}
-	if ctx == nil {
-		ctx = context.Background()
 	}
 	var result OpenResult
 	err := withOpenLock(ctx, func() error {

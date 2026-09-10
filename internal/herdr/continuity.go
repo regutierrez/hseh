@@ -3,8 +3,6 @@ package herdr
 import (
 	"fmt"
 	"net"
-
-	"github.com/regutierrez/hseh/internal/config"
 )
 
 // ContinuityWitness proves the Herdr server process is the same one that
@@ -38,18 +36,4 @@ func ReadContinuityWitnessFromConn(conn net.Conn, socketPath string) (Continuity
 	}
 	witness.SocketPath = socketPath
 	return witness, nil
-}
-
-// ReadContinuityWitness opens a socket only when no in-flight API conn exists.
-func ReadContinuityWitness() (ContinuityWitness, error) {
-	socketPath := config.SocketPath()
-	if socketPath == "" {
-		return ContinuityWitness{}, fmt.Errorf("hseh history: HERDR_SOCKET_PATH is not set")
-	}
-	conn, err := net.Dial("unix", socketPath)
-	if err != nil {
-		return ContinuityWitness{}, fmt.Errorf("hseh history: dial for continuity witness: %w", err)
-	}
-	defer conn.Close()
-	return ReadContinuityWitnessFromConn(conn, socketPath)
 }

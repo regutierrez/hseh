@@ -1,14 +1,10 @@
 package picker
 
 import (
-	"context"
-	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/regutierrez/hseh/internal/gitinfo"
 	"github.com/regutierrez/hseh/internal/herdr"
 	"github.com/regutierrez/hseh/internal/termtext"
 )
@@ -45,7 +41,7 @@ func TestAgentDetailsUseHerdrDescriptionAndDirectory(t *testing.T) {
 
 func TestSelectedRowRetainsStatusColorAndBold(t *testing.T) {
 	m := model{selectedID: "a", visible: []Item{{ID: "a", DisplayRows: []string{"\x1b[33m●\x1b[0m \x1b[1mProject\x1b[0m"}}}}
-	got := m.renderList(30, 3)
+	got := strings.Join(m.buildListLayout(30, 3).Lines, "\n")
 	if !strings.Contains(got, "\x1b[33m●") || !strings.Contains(got, "\x1b[1mProject") {
 		t.Fatalf("selected styling erased: %q", got)
 	}
@@ -76,38 +72,5 @@ func TestWrappedDetailsKeepMutedColorAndRail(t *testing.T) {
 	}
 	if found < 2 {
 		t.Fatal("fixture did not produce wrapped detail rows")
-	}
-}
-
-func gitFixture(t *testing.T, dir string, args ...string) string {
-	t.Helper()
-	cmd := exec.Command("git", append([]string{"-C", dir, "-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid"}, args...)...)
-	b, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("git %v: %v %s", args, err, b)
-	}
-	return string(b)
-}
-
-func TestGitDetailsReadRealCheckout(t *testing.T) {
-	dir := t.TempDir()
-	gitFixture(t, dir, "init", "-b", "main")
-	os.WriteFile(filepath.Join(dir, "tracked"), []byte("one"), 0600)
-	gitFixture(t, dir, "add", "tracked")
-	gitFixture(t, dir, "commit", "-m", "initial")
-	os.WriteFile(filepath.Join(dir, "tracked"), []byte("two"), 0600)
-	os.WriteFile(filepath.Join(dir, "staged"), []byte("new"), 0600)
-	gitFixture(t, dir, "add", "staged")
-	os.WriteFile(filepath.Join(dir, "untracked"), []byte("new"), 0600)
-	before := gitFixture(t, dir, "status", "--porcelain")
-	got := gitinfo.Read(context.Background(), dir)
-	if got.Branch != "main" || got.Status != "+1 ~1 ?1" {
-		t.Fatalf("git details %+v", got)
-	}
-	if after := gitFixture(t, dir, "status", "--porcelain"); after != before {
-		t.Fatal("git status mutated checkout")
-	}
-	if got := gitinfo.Read(context.Background(), t.TempDir()); got.Branch != "" || got.Status != "" {
-		t.Fatalf("nonrepo %+v", got)
 	}
 }

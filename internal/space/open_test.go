@@ -51,13 +51,15 @@ func TestOpenReusableSpaceLockedCancelBeforeMutation(t *testing.T) {
 	t.Setenv("HERDR_PLUGIN_CONFIG_DIR", config)
 	t.Setenv("HERDR_SESSION", "hseh-test")
 	release := make(chan struct{})
+	held := make(chan struct{})
 	go func() {
 		_ = lockfile.WithExclusive(openLockPath(state), func() error {
+			close(held)
 			<-release
 			return nil
 		})
 	}()
-	time.Sleep(20 * time.Millisecond)
+	<-held
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {

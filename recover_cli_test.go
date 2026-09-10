@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -13,15 +12,10 @@ import (
 	"github.com/regutierrez/hseh/internal/space"
 )
 
-func useHsehTestSession(t *testing.T, stateDir string) {
-	t.Helper()
-	t.Setenv("HERDR_SESSION", "hseh-test")
-	t.Setenv("HERDR_PLUGIN_STATE_DIR", stateDir)
-}
-
+// readSpaceAssociationFile decodes the session's association file; useHsehTestSession must have run.
 func readSpaceAssociationFile(t *testing.T, stateDir string) space.AssociationState {
 	t.Helper()
-	payload, err := os.ReadFile(filepath.Join(stateDir, "hseh-test", "associations.json"))
+	payload, err := os.ReadFile(space.AssociationFilePath(stateDir))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,13 +24,6 @@ func readSpaceAssociationFile(t *testing.T, stateDir string) space.AssociationSt
 		t.Fatalf("decode %s: %v", payload, err)
 	}
 	return state
-}
-
-func runCompiledHseh(env []string, args ...string) (string, error) {
-	cmd := exec.Command(compiledHseh, args...)
-	cmd.Env = env
-	out, err := cmd.CombinedOutput()
-	return string(out), err
 }
 
 func TestParseRecoverArgsRejectsUnknownAndMissingChoice(t *testing.T) {
@@ -51,6 +38,9 @@ func TestParseRecoverArgsRejectsUnknownAndMissingChoice(t *testing.T) {
 	}
 	if _, _, _, err := parseRecoverArgs([]string{"def-a", "--create", "extra"}); err == nil || !strings.Contains(err.Error(), "unknown argument extra") {
 		t.Fatalf("trailing: %v", err)
+	}
+	if _, _, _, err := parseRecoverArgs([]string{"def-a", "--workspace", "w1", "--workspace=w2"}); err == nil || !strings.Contains(err.Error(), "repeated argument --workspace") {
+		t.Fatalf("repeated: %v", err)
 	}
 	for _, args := range [][]string{{"demo", "--workspace=", "--create"}, {"demo", "--workspace", "", "--create"}, {"demo", "--workspace", " \t", "--create"}, {"demo", "--workspace="}} {
 		if _, _, _, err := parseRecoverArgs(args); err == nil {
@@ -242,12 +232,9 @@ func TestCompiledRecoverCreatePartialThenRepeatFocuses(t *testing.T) {
 		t.Fatal(err)
 	}
 	config := t.TempDir()
-	dir := filepath.Join(config, "spaces")
-	os.MkdirAll(dir, 0o700)
-	body := "id = \"def-partial\"\nname = \"partial\"\nworking_dir = \"" + work + "\"\n" +
-		"[[tabs]]\nname = \"root\"\ncommand = \"echo FIRST\"\n" +
-		"[[tabs]]\nname = \"web\"\nworking_dir = \"web\"\ncommand = \"echo SECOND\"\n"
-	os.WriteFile(filepath.Join(dir, "partial.toml"), []byte(body), 0o600)
+	hsehtest.WriteDefinitionTOML(t, config, "partial", "id = \"def-partial\"\nname = \"partial\"\nworking_dir = \""+work+"\"\n"+
+		"[[tabs]]\nname = \"root\"\ncommand = \"echo FIRST\"\n"+
+		"[[tabs]]\nname = \"web\"\nworking_dir = \"web\"\ncommand = \"echo SECOND\"\n")
 	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{Version: "0.9.0"}, FailMethod: "tab.create"}
 	socket, state := hsehtest.Start(t, h)
 	useHsehTestSession(t, state)
@@ -300,14 +287,6 @@ func TestCompiledRecoverCreateIsNotGenericDuplicate(t *testing.T) {
 	}
 }
 
-func TestCompiledRecoverUnknownArgs(t *testing.T) {
-	env := append(os.Environ(), "HERDR_SESSION=hseh-test")
-	out, err := runCompiledHseh(env, "recover", "def-a", "--create", "--yes")
-	if err == nil || !strings.Contains(out, "unknown argument --yes") {
-		t.Fatalf("got %v %s", err, out)
-	}
-}
-
 func TestCompiledListShowsRecoveryWhileLiveItemsRemain(t *testing.T) {
 	dirA := t.TempDir()
 	config := t.TempDir()
@@ -315,7 +294,7 @@ func TestCompiledListShowsRecoveryWhileLiveItemsRemain(t *testing.T) {
 	h := &hsehtest.Server{Snapshot: herdr.SessionSnapshot{
 		Version:    "0.9.0",
 		Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w1", Label: "live", ActiveTabID: "w1:t1"}},
-		Tabs:       []herdr.TabRow{{TabID: "w1:t1", WorkspaceID: "w1", Label: "live"}},
+		Tabs:       []herdr.TabRow{{TabID: "w1:t1", Label: "live"}},
 		Panes:      []herdr.PaneRow{{PaneID: "w1:p1", WorkspaceID: "w1", TabID: "w1:t1", Cwd: dirA}},
 	}}
 	socket, state := hsehtest.Start(t, h)

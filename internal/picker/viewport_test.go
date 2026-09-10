@@ -14,29 +14,29 @@ import (
 	"github.com/regutierrez/hseh/internal/focus"
 	"github.com/regutierrez/hseh/internal/gitinfo"
 	"github.com/regutierrez/hseh/internal/herdr"
+	"github.com/regutierrez/hseh/internal/hsehtest"
 	"github.com/regutierrez/hseh/internal/space"
 	"github.com/regutierrez/hseh/internal/termtext"
 )
 
-func spaceSnapshot(cwd string, git map[string]gitinfo.WorkspaceGit) herdr.SessionSnapshot {
+func spaceSnapshot(cwd string) herdr.SessionSnapshot {
 	return herdr.SessionSnapshot{
-		Workspaces:     []herdr.WorkspaceRow{{WorkspaceID: "w1", Label: "hseh", AgentStatus: "idle", ActiveTabID: "w1:t1"}},
-		Layouts:        []herdr.PaneLayout{{TabID: "w1:t1", FocusedPaneID: "w1:p1"}},
-		Panes:          []herdr.PaneRow{{PaneID: "w1:p1", Cwd: cwd}},
-		GitByDirectory: git,
+		Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w1", Label: "hseh", AgentStatus: "idle", ActiveTabID: "w1:t1"}},
+		Layouts:    []herdr.PaneLayout{{TabID: "w1:t1", FocusedPaneID: "w1:p1"}},
+		Panes:      []herdr.PaneRow{{PaneID: "w1:p1", Cwd: cwd}},
 	}
 }
 
 func TestSpaceRowIsOneLineWithBadgeGitAndCheckoutRoot(t *testing.T) {
 	cwd := "/home/u/hseh/internal/picker"
 	git := map[string]gitinfo.WorkspaceGit{cwd: {Branch: "main", Status: "~2", Root: "/home/u/hseh"}}
-	items := buildSpaceItems(spaceSnapshot(cwd, git), focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout())
+	items := buildSpaceItems(spaceSnapshot(cwd), focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), git)
 	item := items[0]
 	if item.Source != SourceHerdr || item.Path != "/home/u/hseh" {
 		t.Fatalf("source/path: %+v", item)
 	}
 	if item.PreviewPane != "" {
-		t.Fatalf("space rows no longer preview a pane: %q", item.PreviewPane)
+		t.Fatalf("space rows preview a directory, not a pane: %q", item.PreviewPane)
 	}
 	prefix, _ := statePrefix("idle", "dots")
 	want := prefix + herdrSourceIcon + " herdr    hseh  " + gitBranchIcon + " main ~2  /home/u/hseh"
@@ -47,7 +47,7 @@ func TestSpaceRowIsOneLineWithBadgeGitAndCheckoutRoot(t *testing.T) {
 		t.Fatalf("display diverges from plain: %q", item.DisplayRows[0])
 	}
 	// Without git the active pane's directory is the path and no git detail is shown.
-	plain := buildSpaceItems(spaceSnapshot(cwd, nil), focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout())[0]
+	plain := buildSpaceItems(spaceSnapshot(cwd), focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil)[0]
 	if plain.Path != cwd || !strings.HasSuffix(plain.Rows[0], "hseh  "+cwd) {
 		t.Fatalf("no-git row %q path %q", plain.Rows, plain.Path)
 	}
@@ -72,7 +72,7 @@ func TestTemplateRowIsOneLineAndKeepsDescriptionForSearchOnly(t *testing.T) {
 }
 
 func TestBadgeColumnAlignsNamesAcrossSources(t *testing.T) {
-	live := buildSpaceItems(spaceSnapshot("/x", nil), focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout())[0]
+	live := buildSpaceItems(spaceSnapshot("/x"), focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil)[0]
 	template := definitionItem(space.Definition{ID: "d", Name: "app", ResolvedDir: "/srv/app"}, false, gitinfo.WorkspaceGit{})
 	nameColumn := func(row, name string) int {
 		return utf8.RuneCountInString(row[:strings.Index(row, name)])
@@ -95,7 +95,7 @@ func TestPathColumnHidesBelowMinimumListWidth(t *testing.T) {
 	}
 	// A query that matches only the path still highlights without panicking when the column is hidden.
 	m.query = "srv"
-	filtered := FilterItems([]Item{item}, "srv")
+	filtered, _ := filterItemsInto(nil, nil, []Item{item}, "srv")
 	if len(filtered) != 1 {
 		t.Fatal("path no longer searchable")
 	}
@@ -150,7 +150,7 @@ func TestSpaceSelectionListsDirectoryOnceWithoutPolling(t *testing.T) {
 	if len(reads) != 1 || reads[0] != "/tmp/a" {
 		t.Fatalf("reads %v", reads)
 	}
-	if m.previewText != "listing of /tmp/a" || !m.previewListing || m.previewTextLive || m.previewInFlight || m.previewPane != "" {
+	if m.previewText != "listing of /tmp/a" || !m.previewListing || m.previewInFlight || m.previewPane != "" {
 		t.Fatalf("listing not applied: %+v", m)
 	}
 	if cmd := m.afterSelectionChange(); cmd != nil {
@@ -227,7 +227,7 @@ func TestGitCoversTemplateDirectories(t *testing.T) {
 	if err := os.Mkdir(repo, 0700); err != nil {
 		t.Fatal(err)
 	}
-	gitFixture(t, repo, "init", "-b", "main")
+	hsehtest.Git(t, repo, "init", "-b", "main")
 	def := space.Definition{ID: "def-t", Name: "tmpl", ResolvedDir: repo, WorkingDir: repo}
 	got := LoadGit(context.Background(), herdr.SessionSnapshot{}, []space.Definition{def})
 	if got[repo].Branch != "main" || got[repo].Root != repo {
