@@ -23,8 +23,8 @@ func twoPaneModel() model {
 		previewLoadingDelay: 20 * time.Millisecond,
 		selectedID:          "a",
 		visible: []Item{
-			{ID: "a", PreviewPane: "pa", Rows: []string{"alpha"}},
-			{ID: "b", PreviewPane: "pb", Rows: []string{"beta"}},
+			{Kind: KindAgent, ID: "a", PreviewPane: "pa", Rows: []string{"alpha"}},
+			{Kind: KindAgent, ID: "b", PreviewPane: "pb", Rows: []string{"beta"}},
 		},
 	}
 }
@@ -162,13 +162,14 @@ func TestFirstSnapshotPreselectsAndStartsPreview(t *testing.T) {
 			{WorkspaceID: "w2", Label: "beta", ActiveTabID: "w2:t1"},
 		},
 		Layouts: []herdr.PaneLayout{{TabID: "w1:t1", FocusedPaneID: "w1:p1"}, {TabID: "w2:t1", FocusedPaneID: "w2:p1"}},
+		Panes:   []herdr.PaneRow{{PaneID: "w1:p1", Cwd: "/tmp/alpha"}, {PaneID: "w2:p1", Cwd: "/tmp/beta"}},
 	}})
 	got := next.(model)
 	if !got.snapshotReady || got.selectedID != SelectionID(KindSpace, "w2") {
 		t.Fatalf("first snapshot did not preselect previous space: %q", got.selectedID)
 	}
-	if cmd == nil || !got.previewInFlight {
-		t.Fatal("first snapshot did not start the preview")
+	if cmd == nil || !got.previewInFlight || got.previewDir != "/tmp/beta" {
+		t.Fatalf("first snapshot did not start the directory preview: inflight=%v dir=%q", got.previewInFlight, got.previewDir)
 	}
 }
 
@@ -367,7 +368,7 @@ func TestDividerDragOnlyWhileDragging(t *testing.T) {
 
 func TestStackedPreviewRendersBelowList(t *testing.T) {
 	m := model{width: 60, height: 24, widePreviewMinCols: 100, snapshotReady: true, catalogReady: true, selectedID: "a",
-		visible: []Item{{ID: "a", PreviewPane: "pa", Rows: []string{"alpha"}}}, previewText: "PANE-BODY", previewTextLive: true}
+		visible: []Item{{Kind: KindAgent, ID: "a", PreviewPane: "pa", Rows: []string{"alpha"}}}, previewText: "PANE-BODY", previewTextLive: true}
 	f := m.frame()
 	if f.mode != previewStacked {
 		t.Fatalf("mode %d", f.mode)
@@ -393,7 +394,7 @@ func TestStackedPreviewRendersBelowList(t *testing.T) {
 }
 
 func TestViewLinesFillWidth(t *testing.T) {
-	items := []Item{{ID: "a", Rows: []string{"alpha"}, PreviewPane: "pa"}}
+	items := []Item{{Kind: KindAgent, ID: "a", Rows: []string{"alpha"}, PreviewPane: "pa"}}
 	models := []model{
 		{width: 110, height: 24, widePreviewMinCols: 100, snapshotReady: true, catalogReady: true, selectedID: "a", visible: items, previewText: "BODY", previewTextLive: true},
 		{width: 70, height: 24, widePreviewMinCols: 100, snapshotReady: true, catalogReady: true, selectedID: "a", visible: items, previewText: "BODY", previewTextLive: true},
@@ -458,7 +459,7 @@ func burstModel(reader *burstPreviewReader) model {
 	m := model{width: 120, height: 30, widePreviewMinCols: 100, snapshotReady: true, catalogReady: true, previewLoadingDelay: time.Millisecond}
 	m.readPane = reader.read
 	for i := 0; i < 9; i++ {
-		m.visible = append(m.visible, Item{ID: fmt.Sprintf("i%d", i), PreviewPane: fmt.Sprintf("p%d", i), Rows: []string{fmt.Sprintf("row %d", i)}})
+		m.visible = append(m.visible, Item{Kind: KindAgent, ID: fmt.Sprintf("i%d", i), PreviewPane: fmt.Sprintf("p%d", i), Rows: []string{fmt.Sprintf("row %d", i)}})
 	}
 	m.selectedID = "i0"
 	return m
@@ -495,7 +496,7 @@ func benchmarkItems(n int) []Item {
 	items := make([]Item, 0, n)
 	for i := 0; i < n; i++ {
 		rows := []string{fmt.Sprintf("● project-%04d  main +%d", i, i%7), fmt.Sprintf("~/code/area-%d/project-%04d", i%13, i), "pi - working on feature branch"}
-		items = append(items, Item{ID: fmt.Sprintf("space:w%d", i), Rows: rows, DisplayRows: []string{"\x1b[33m●\x1b[0m \x1b[1m" + rows[0][4:] + "\x1b[0m", mutedSGR + rows[1] + "\x1b[0m", mutedSGR + rows[2] + "\x1b[0m"}, SearchText: strings.Join(rows, " "), PreviewPane: fmt.Sprintf("w%d:p1", i)})
+		items = append(items, Item{Kind: KindAgent, ID: fmt.Sprintf("agent:w%d", i), Rows: rows, DisplayRows: []string{"\x1b[33m●\x1b[0m \x1b[1m" + rows[0][4:] + "\x1b[0m", mutedSGR + rows[1] + "\x1b[0m", mutedSGR + rows[2] + "\x1b[0m"}, SearchText: strings.Join(rows, " "), PreviewPane: fmt.Sprintf("w%d:p1", i)})
 	}
 	return items
 }

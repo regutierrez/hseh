@@ -40,7 +40,8 @@ nothing outside this module can import it:
 | `internal/lockfile` | flock helper shared by history, definitions and space open |
 | `internal/trace` | `HSEH_TRACE` timing hooks |
 | `internal/termtext` | strip terminal controls, keep only SGR |
-| `internal/gitinfo` | `git status --porcelain=v2` summary per directory |
+| `internal/gitinfo` | `git status --porcelain=v2` summary and checkout root per directory |
+| `internal/dirlist` | directory listing for the spaces preview: `eza` when installed, builtin fallback |
 | `internal/herdr` | socket client, `session.snapshot` types, continuity witness, plugin events, workspace/tab/pane calls |
 | `internal/focus` | mru focus history on disk and the plugin event hook that maintains it |
 | `internal/space` | reusable space definitions, associations, open and recover |
@@ -71,6 +72,21 @@ the popup footer and that dimension falls back to its default.
 colors follow the `[theme]` in herdr's own `config.toml`, and the sidebar rows
 and status indicator style follow its `[ui]` section, so those need no hseh
 config.
+
+## spaces rows and preview
+
+each spaces row is one line: agent status, a source badge (`herdr` for a live
+workspace, `template` for an unopened definition), the name, git branch and
+status, and the absolute path. the path is the git checkout root when the
+active pane is inside a repository, otherwise the pane's directory; templates
+show their `working_dir`. the path column disappears when the list is narrower
+than 45 cells, and a row that still does not fit is cut, not wrapped.
+
+the preview lists that directory with
+`eza --icons=always --color=always --group-directories-first -a` when `eza` is
+on `PATH` (optional; install it for icons and colors), otherwise a plain builtin
+listing. the listing is read once per selection and never polls. agents keep
+their live pane preview.
 
 ## measuring speed
 

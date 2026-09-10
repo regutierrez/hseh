@@ -13,9 +13,11 @@ import (
 )
 
 // WorkspaceGit is read-only checkout detail. Empty fields mean a non-repository directory.
+// Root is the checkout's top-level directory (a linked worktree reports its own path).
 type WorkspaceGit struct {
 	Branch string
 	Status string
+	Root   string
 }
 
 func Read(ctx context.Context, dir string) WorkspaceGit {
@@ -23,19 +25,38 @@ func Read(ctx context.Context, dir string) WorkspaceGit {
 		return WorkspaceGit{}
 	}
 	defer trace.Span("git.status", "dir", dir)()
-	cmd := exec.CommandContext(ctx, "git", "--no-optional-locks", "-C", dir, "-c", "core.fsmonitor=false", "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all")
-	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	root, ok := readRoot(ctx, dir)
+	if !ok {
+		return WorkspaceGit{}
+	}
+	cmd := gitCommand(ctx, dir, "status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all")
 	output, err := cmd.Output()
 	if err != nil {
-		if e, ok := err.(*exec.ExitError); ok && strings.Contains(string(e.Stderr), "not a git repository") {
-			return WorkspaceGit{}
-		}
 		if ctx.Err() != nil {
 			return WorkspaceGit{}
 		}
-		return WorkspaceGit{Status: "git status unavailable"}
+		return WorkspaceGit{Status: "git status unavailable", Root: root}
 	}
-	return ParseStatus(string(output))
+	result := ParseStatus(string(output))
+	result.Root = root
+	return result
+}
+
+// readRoot resolves the checkout top level. ok is false for non-repositories,
+// cancelled reads, and directories git cannot inspect.
+func readRoot(ctx context.Context, dir string) (root string, ok bool) {
+	output, err := gitCommand(ctx, dir, "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return "", false
+	}
+	root = strings.TrimSpace(string(output))
+	return root, root != ""
+}
+
+func gitCommand(ctx context.Context, dir string, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, "git", append([]string{"--no-optional-locks", "-C", dir, "-c", "core.fsmonitor=false"}, args...)...)
+	cmd.Env = append(os.Environ(), "LC_ALL=C")
+	return cmd
 }
 
 func ParseStatus(output string) WorkspaceGit {

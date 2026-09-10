@@ -33,6 +33,10 @@ const railWidth = 2
 
 const helpText = "↑↓ move · tab view · enter open · esc close"
 
+// pathColumnMinWidth is the narrowest list content that still shows the absolute path column.
+// With the default 50/50 split this is a popup of about 94 columns.
+const pathColumnMinWidth = 45
+
 const (
 	copyLoading        = "Loading…"
 	copyLoadFailed     = "Could not load Herdr session"
@@ -456,6 +460,9 @@ func (m model) emptyListCopy() string {
 // wrapItemBlock wraps one item's display rows to the content width, highlighting query
 // matches and, for the selected item, emboldening the primary row.
 func (m model) wrapItemBlock(item Item, selected bool, contentWidth int) []string {
+	if contentWidth < pathColumnMinWidth {
+		item = item.withoutPathColumn()
+	}
 	rows := highlightItemRows(item, m.query, m.th().Mauve+"\x1b[1m")
 	if len(rows) == 0 {
 		rows = []string{item.ID}
@@ -464,6 +471,11 @@ func (m model) wrapItemBlock(item Item, selected bool, contentWidth int) []strin
 	for i, row := range rows {
 		if selected && i == 0 {
 			row = emboldenAfterResets(row)
+		}
+		if item.Path != "" {
+			// Spaces rows stay one line: a long path is cut, never wrapped onto a second row.
+			lines = append(lines, ansi.Truncate(row, contentWidth, "…"))
+			continue
 		}
 		lines = append(lines, wrapDisplayLine(row, contentWidth)...)
 	}
@@ -658,6 +670,8 @@ func (m model) renderPreview(width, height int) string {
 		return clipBlock(th.Muted+copyNoPreview+"\x1b[0m", width, height)
 	case m.previewTextLive:
 		return clipLivePreview(m.previewText, width, height)
+	case m.previewListing:
+		return clipListing(m.previewText, width, height)
 	default:
 		return clipBlock(m.previewText, width, height)
 	}
@@ -678,6 +692,19 @@ func clipLivePreview(text string, width, height int) string {
 		carry = continueSGR(carry, line)
 	}
 	return joinPaddedRows(visible, width, height)
+}
+
+// clipListing shows the top of a directory listing and truncates long entries instead of wrapping them.
+func clipListing(text string, width, height int) string {
+	width, height = max(1, width), max(1, height)
+	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for i, line := range lines {
+		lines[i] = padDisplayWidth(line, width) + "\x1b[0m"
+	}
+	return joinPaddedRows(lines, width, height)
 }
 
 func continueSGR(carry, line string) string {

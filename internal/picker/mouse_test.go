@@ -42,7 +42,7 @@ func TestPreviewStackedAt99SideBySideAt100(t *testing.T) {
 		widePreviewMinCols: config.DefaultWidePreviewMinColumns,
 		snapshotReady:      true,
 		selectedID:         "w2",
-		visible:            []Item{{ID: "w2", PreviewPane: "w2:p1"}},
+		visible:            []Item{{Kind: KindAgent, ID: "w2", PreviewPane: "w2:p1"}},
 	}
 	next, cmd := m.Update(tea.WindowSizeMsg{Width: 99, Height: 24})
 	got := next.(model)

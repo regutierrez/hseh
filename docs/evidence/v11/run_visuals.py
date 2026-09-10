@@ -24,7 +24,8 @@ base = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(base)
 ROWS, COLS = 40, 140
 GRAY = (118, 118, 118)
-ACTIVE = (95, 175, 215)
+# Active tab background: 256-colour (xterm 74) or truecolour catppuccin accent, depending on the terminal profile herdr reports.
+ACTIVE = {(95, 175, 215), (137, 180, 250)}
 
 
 def palette(n):
@@ -88,11 +89,20 @@ class StyledScreen(base.CellScreen):
                 super().feed(part)
 
     def colored_label(self, label, color):
+        colors = color if isinstance(color, set) else {color}
         for row in range(ROWS):
             col = self.row(row).find(label)
-            if col >= 0 and all(self.backgrounds[row][c] == color for c in range(col,col+len(label))):
+            if col >= 0 and all(self.backgrounds[row][c] in colors for c in range(col,col+len(label))):
                 return row,col
         raise AssertionError(f'{label!r} lacks {color}\n{self.dump()}')
+
+    def selected_label(self, label):
+        # Since the rail UI, the selected item shows an accent rail at the list edge and a bold name instead of a gray block.
+        for row in range(ROWS):
+            text = self.row(row); col = text.find(label)
+            if col >= 0 and '┃' in text[:col] and self.bold_cells[row][col]:
+                return row,col
+        raise AssertionError(f'{label!r} not selected\n{self.dump()}')
 
     def png(self, path):
         # PIL is optional and only used to view terminal evidence. It is not an app dependency.
@@ -175,32 +185,32 @@ def main():
             return base.focused_ids(data)
         initial=capture('spaces',1.5)
         initial.colored_label('Spaces',ACTIVE)
-        initial.colored_label('beta',GRAY)
-        assert 'BETA_LAST_' in initial.dump()
-        assert 'BETA_ROW_00' not in initial.dump(), 'preview kept top of taller pane'
+        initial.selected_label('beta')
+        # Spaces preview the selected row's directory (issue #3), never the pane: beta's cwd holds grid.py.
+        assert 'grid.py' in initial.dump(), initial.dump()
+        assert 'BETA_LAST_' not in initial.dump(), 'spaces preview showed pane output'
         assert focus()==[ws_a]
         initial.png(out/'spaces.png')
         os.write(fd,b'\t');agents=capture('agents');agents.colored_label('Agents',ACTIVE)
         os.write(fd,b'\t');spaces=capture('spaces-again');spaces.colored_label('Spaces',ACTIVE)
         os.write(fd,b'be');filtered=capture('query');assert '❯ be' in filtered.dump()
-        os.write(fd,b'\x1b[A');selected=capture('selected');selected.colored_label('beta',GRAY)
-        assert 'BETA_LAST_' in selected.dump()
-        tick_before=re.findall(r'BETA_LAST_\d+',selected.dump())
-        tick_after=capture('updated',1.2)
-        assert re.findall(r'BETA_LAST_\d+',tick_after.dump())!=tick_before
+        os.write(fd,b'\x1b[A');selected=capture('selected');selected.selected_label('beta')
+        assert 'grid.py' in selected.dump() and 'BETA_LAST_' not in selected.dump()
+        settled=capture('updated',1.2)
+        assert 'BETA_LAST_' not in settled.dump(), 'directory preview must not poll the pane'
         assert focus()==[ws_a]
         os.write(fd,b'\x1b');closed=capture('escape');assert 'Spaces' not in closed.dump();assert focus()==[ws_a]
         herdr('plugin','action','invoke','hseh.spaces');opened=capture('reopened',1.2)
         # Click alpha, then beta: each selection has a visible full-block background, without focus.
         origin=next(opened.row(r).index('┌hseh') for r in range(ROWS) if '┌hseh' in opened.row(r))
         r=next(r for r in range(ROWS) if opened.row(r).find('alpha')>origin);c=opened.row(r).index('alpha')
-        base.sgr_left_click(fd,r,c);clicked=capture('click-alpha');clicked.colored_label('alpha',GRAY)
+        base.sgr_left_click(fd,r,c);clicked=capture('click-alpha');clicked.selected_label('alpha')
         r=next(r for r in range(ROWS) if clicked.row(r).find('beta')>origin);c=clicked.row(r).index('beta')
-        base.sgr_left_click(fd,r,c);clicked=capture('click-beta');clicked.colored_label('beta',GRAY)
+        base.sgr_left_click(fd,r,c);clicked=capture('click-beta');clicked.selected_label('beta')
         assert focus()==[ws_a]
         os.write(fd,b'\r');capture('enter',1.2);assert focus()==[ws_b]
         assert base.sha256(base.USER_PLUGINS)==original_registry
-        (out/'notes.txt').write_text('PASS: gray background; active tab cycling; search; latest grid row and polling; mouse; Escape unchanged; Enter beta\nBinary '+base.sha256(plugin/'hseh')+'\n')
+        (out/'notes.txt').write_text('PASS: rail selection; active tab cycling; search; directory preview without pane polling; mouse; Escape unchanged; Enter beta\nBinary '+base.sha256(plugin/'hseh')+'\n')
         print('PASS visual e2e',out)
     finally:
         if fd is not None: os.close(fd)

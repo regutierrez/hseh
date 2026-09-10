@@ -21,20 +21,31 @@ const (
 	ViewAgents     = "agents"
 )
 
+// Spaces rows carry a source badge: a live Herdr workspace or an unopened template.
+const (
+	SourceHerdr    = "herdr"
+	SourceTemplate = "template"
+)
+
 // Item is one flat picker row with a stable target id.
 type Item struct {
-	Kind         string   `json:"kind"`
-	ID           string   `json:"id"`
-	WorkspaceID  string   `json:"workspace_id,omitempty"`
-	PaneID       string   `json:"pane_id,omitempty"`
-	DefinitionID string   `json:"definition_id,omitempty"`
-	Label        string   `json:"label,omitempty"`
-	Status       string   `json:"status,omitempty"`
-	Rows         []string `json:"rows"`
-	DisplayRows  []string `json:"-"`
-	SearchText   string   `json:"-"`
-	PreviewPane  string   `json:"-"`
-	PreviewText  string   `json:"-"`
+	Kind         string `json:"kind"`
+	ID           string `json:"id"`
+	WorkspaceID  string `json:"workspace_id,omitempty"`
+	PaneID       string `json:"pane_id,omitempty"`
+	DefinitionID string `json:"definition_id,omitempty"`
+	Label        string `json:"label,omitempty"`
+	Status       string `json:"status,omitempty"`
+	// Source and Path are set on Spaces rows only. Path is absolute and is what the preview lists.
+	Source string `json:"source,omitempty"`
+	Path   string `json:"path,omitempty"`
+	// Recovery holds the exact `hseh recover` commands for an unresolved template; the popup shows them in the preview.
+	Recovery    []string `json:"recovery,omitempty"`
+	Rows        []string `json:"rows"`
+	DisplayRows []string `json:"-"`
+	SearchText  string   `json:"-"`
+	PreviewPane string   `json:"-"`
+	PreviewText string   `json:"-"`
 	// Matches are byte offsets into SearchText matched by the current query, used for highlighting.
 	Matches []int `json:"-"`
 }
@@ -103,17 +114,23 @@ func buildSpaceItems(snapshot herdr.SessionSnapshot, history focus.History, layo
 	})
 	var items []Item
 	for _, workspace := range workspaces {
-		plain, display := renderSpaceSidebarRows(workspace, snapshot.GitByDirectory[herdr.ActiveWorkspaceDirectory(snapshot, workspace.WorkspaceID)], layout)
+		dir := herdr.ActiveWorkspaceDirectory(snapshot, workspace.WorkspaceID)
+		git := snapshot.GitByDirectory[dir]
+		// The checkout root is stable while the user moves around inside a repository.
+		path := firstNonEmpty(git.Root, dir)
+		name := sanitizeTokenValue(firstNonEmpty(workspace.Label, workspace.WorkspaceID))
+		plain, display := renderSpaceRow(spaceRow{status: workspace.AgentStatus, source: SourceHerdr, name: name, git: git, path: path}, layout)
 		items = append(items, Item{
 			Kind:        KindSpace,
 			ID:          SelectionID(KindSpace, workspace.WorkspaceID),
 			WorkspaceID: workspace.WorkspaceID,
 			Label:       termtext.StripControls(workspace.Label),
 			Status:      workspace.AgentStatus,
-			Rows:        plain,
-			DisplayRows: display,
-			SearchText:  strings.Join(plain, " "),
-			PreviewPane: herdr.ActiveWorkspacePaneID(snapshot, workspace.WorkspaceID),
+			Source:      SourceHerdr,
+			Path:        path,
+			Rows:        []string{plain},
+			DisplayRows: []string{display},
+			SearchText:  plain,
 		})
 	}
 	return items
@@ -159,20 +176,85 @@ func sanitizeTokenValue(value string) string {
 	return strings.TrimSpace(termtext.StripControls(value))
 }
 
-func renderSpaceSidebarRows(workspace herdr.WorkspaceRow, git gitinfo.WorkspaceGit, layout SidebarLayout) (plain, display []string) {
-	prefix, styledPrefix := statePrefix(workspace.AgentStatus, layout.StatusIndicators)
-	name := sanitizeTokenValue(firstNonEmpty(workspace.Label, workspace.WorkspaceID))
-	detail := strings.TrimSpace(git.Branch + " " + git.Status)
-	if git.Branch != "" {
-		detail = gitBranchIcon + " " + detail
+// spaceRow is the content of one single-line Spaces row: status slot, source badge, name, git, path.
+type spaceRow struct {
+	status string
+	source string
+	name   string
+	tag    string // muted note after the name, e.g. "recovery needed"
+	git    gitinfo.WorkspaceGit
+	path   string
+}
+
+// Nerd Fonts 3 glyphs for the source badge: nf-md-sheep (as in sesh) and nf-md-content_copy.
+const (
+	herdrSourceIcon    = "\U000f0cc6"
+	templateSourceIcon = "\U000f018f"
+)
+
+// statusSlotWidth keeps badges aligned whether or not a row has an agent status icon.
+const statusSlotWidth = 2
+
+// badgeColumnWidth fits the widest badge ("<icon> template") plus one separator cell.
+var badgeColumnWidth = len([]rune(templateSourceIcon+" "+SourceTemplate)) + 1
+
+// pathSeparator sits between the row body and the absolute path so the renderer can drop the path column.
+const pathSeparator = "  "
+
+func sourceBadge(source string) string {
+	switch source {
+	case SourceHerdr:
+		return herdrSourceIcon + " " + SourceHerdr
+	case SourceTemplate:
+		return templateSourceIcon + " " + SourceTemplate
+	default:
+		return ""
 	}
-	row := prefix + name
-	styled := styledPrefix + "\x1b[1m" + name + "\x1b[0m"
-	if detail != "" {
-		row += "  " + detail
-		styled += "  " + mutedSGR + detail + "\x1b[0m"
+}
+
+func renderSpaceRow(row spaceRow, layout SidebarLayout) (plain, display string) {
+	prefix, styledPrefix := statePrefix(row.status, layout.StatusIndicators)
+	if prefix == "" {
+		prefix = strings.Repeat(" ", statusSlotWidth)
+		styledPrefix = prefix
 	}
-	return []string{row}, []string{styled}
+	badge := sourceBadge(row.source)
+	badge += strings.Repeat(" ", max(0, badgeColumnWidth-len([]rune(badge))))
+	plain = prefix + badge + row.name
+	display = styledPrefix + mutedSGR + badge + "\x1b[0m" + "\x1b[1m" + row.name + "\x1b[0m"
+	if row.tag != "" {
+		plain += " (" + row.tag + ")"
+		display += " " + mutedSGR + "(" + row.tag + ")" + "\x1b[0m"
+	}
+	if detail := strings.TrimSpace(row.git.Branch + " " + row.git.Status); detail != "" {
+		if row.git.Branch != "" {
+			detail = gitBranchIcon + " " + detail
+		}
+		plain += "  " + detail
+		display += "  " + mutedSGR + detail + "\x1b[0m"
+	}
+	if row.path != "" {
+		plain += pathSeparator + row.path
+		display += pathSeparator + mutedSGR + row.path + "\x1b[0m"
+	}
+	return plain, display
+}
+
+// withoutPathColumn drops the trailing path from a Spaces row for narrow lists.
+// Search text keeps the path so fuzzy matches on it still rank the row.
+func (item Item) withoutPathColumn() Item {
+	if item.Path == "" || len(item.Rows) == 0 {
+		return item
+	}
+	rows := append([]string{}, item.Rows...)
+	rows[0] = strings.TrimSuffix(rows[0], pathSeparator+item.Path)
+	item.Rows = rows
+	if len(item.DisplayRows) > 0 {
+		display := append([]string{}, item.DisplayRows...)
+		display[0] = strings.TrimSuffix(display[0], pathSeparator+mutedSGR+item.Path+"\x1b[0m")
+		item.DisplayRows = display
+	}
+	return item
 }
 
 func renderAgentSidebarRows(snapshot herdr.SessionSnapshot, agent herdr.AgentRow, layout SidebarLayout) (plain, display []string) {

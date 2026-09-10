@@ -69,7 +69,7 @@ func TestNarrowStopsPreviewReadsAndWideResumes(t *testing.T) {
 	t.Setenv("HERDR_SOCKET_PATH", socket)
 	t.Setenv("HERDR_PLUGIN_STATE_DIR", state)
 	t.Setenv("HERDR_SESSION", "hseh-test")
-	m := model{widePreviewMinCols: 40, previewLoadingDelay: time.Millisecond, snapshotReady: true, selectedID: "w2", visible: []Item{{ID: "w2", PreviewPane: "w2:p1"}}}
+	m := model{widePreviewMinCols: 40, previewLoadingDelay: time.Millisecond, snapshotReady: true, selectedID: "w2", visible: []Item{{Kind: KindAgent, ID: "w2", PreviewPane: "w2:p1"}}}
 	next, cmd := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	got := next.(model)
 	if cmd == nil {

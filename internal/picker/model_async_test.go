@@ -77,7 +77,7 @@ func TestStalePreviewDoesNotStartDuplicateRead(t *testing.T) {
 		widePreviewMinCols: 80,
 		width:              100,
 		selectedID:         "b",
-		visible:            []Item{{ID: "a", PreviewPane: "w1:p1"}, {ID: "b", PreviewPane: "w2:p1"}},
+		visible:            []Item{{Kind: KindAgent, ID: "a", PreviewPane: "w1:p1"}, {Kind: KindAgent, ID: "b", PreviewPane: "w2:p1"}},
 	}
 	next, cmd := m.Update(previewLoadedMsg{seq: 1, targetID: "a", paneID: "w1:p1", text: "stale"})
 	got := next.(model)
@@ -94,8 +94,8 @@ func TestStalePreviewDoesNotStartDuplicateRead(t *testing.T) {
 
 func TestPreviewABAIgnoresFirstReply(t *testing.T) {
 	m := model{widePreviewMinCols: 40, selectedID: "a", visible: []Item{
-		{ID: "a", PreviewPane: "pa", Rows: []string{"a"}},
-		{ID: "b", PreviewPane: "pb", Rows: []string{"b"}},
+		{Kind: KindAgent, ID: "a", PreviewPane: "pa", Rows: []string{"a"}},
+		{Kind: KindAgent, ID: "b", PreviewPane: "pb", Rows: []string{"b"}},
 	}}
 	next, cmd := m.Update(tea.WindowSizeMsg{Width: 80, Height: 20})
 	got := next.(model)
@@ -226,19 +226,20 @@ func TestSnapshotLiveFetchErrorDoesNotReplaceSnapshot(t *testing.T) {
 // once made afterSelectionChange treat it as an unhedged refresh that could sit
 // on Herdr's 100ms poll tick.
 func TestFirstPreviewReadIsHedged(t *testing.T) {
+	// Only agent rows read panes now; spaces list a directory and never touch the socket.
 	snapshot := herdr.SessionSnapshot{
 		FocusedWorkspaceID: "w1",
 		Workspaces: []herdr.WorkspaceRow{
-			{WorkspaceID: "w1", Label: "alpha", AgentStatus: "unknown", ActiveTabID: "w1:t1"},
-			{WorkspaceID: "w2", Label: "beta", AgentStatus: "unknown", ActiveTabID: "w2:t1"},
+			{WorkspaceID: "w1", Label: "alpha", AgentStatus: "idle", ActiveTabID: "w1:t1"},
+			{WorkspaceID: "w2", Label: "beta", AgentStatus: "idle", ActiveTabID: "w2:t1"},
 		},
-		Layouts: []herdr.PaneLayout{
-			{TabID: "w1:t1", FocusedPaneID: "w1:p1"},
-			{TabID: "w2:t1", FocusedPaneID: "w2:p1"},
+		Agents: []herdr.AgentRow{
+			{PaneRow: herdr.PaneRow{PaneID: "w1:p1", WorkspaceID: "w1", TabID: "w1:t1", AgentStatus: "idle", DisplayAgent: "alpha-agent"}},
+			{PaneRow: herdr.PaneRow{PaneID: "w2:p1", WorkspaceID: "w2", TabID: "w2:t1", AgentStatus: "idle", DisplayAgent: "beta-agent"}},
 		},
 	}
 	history := focus.EmptyHistory(herdr.ContinuityWitness{})
-	history.Spaces = []string{"w2", "w1"}
+	history.Agents = []focus.AgentLiveID{{PaneID: "w2:p1", Generation: 1}, {PaneID: "w1:p1", Generation: 1}}
 
 	type read struct {
 		pane   string
@@ -253,7 +254,7 @@ func TestFirstPreviewReadIsHedged(t *testing.T) {
 
 	// Popup path: the async model learns its items from the first snapshotLoadedMsg.
 	var asyncReads []read
-	m := newAsyncModel("spaces", colorTheme{}, 0, 40, nil)
+	m := newAsyncModel("agents", colorTheme{}, 0, 40, nil)
 	m.width, m.height = 120, 30
 	m.readPane = record(&asyncReads)
 	m.snapshotSeq, m.snapshotInFlight = 1, true
@@ -271,7 +272,7 @@ func TestFirstPreviewReadIsHedged(t *testing.T) {
 
 	// Sync path: a model built with the snapshot in hand boots straight into its first read.
 	var syncReads []read
-	m = newModel("spaces", snapshot, history, defaultSidebarLayout(), 0, 40)
+	m = newModel("agents", snapshot, history, defaultSidebarLayout(), 0, 40)
 	m.width, m.height = 120, 30
 	m.readPane = record(&syncReads)
 	next, cmd = m.Update(bootMsg{})

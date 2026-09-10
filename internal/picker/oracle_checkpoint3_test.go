@@ -18,7 +18,7 @@ func TestOracleSnapshotCommandTracksInFlight(t *testing.T) {
 }
 
 func TestOracleFirstPreviewReplyCanRender(t *testing.T) {
-	m := model{widePreviewMinCols: 80, selectedID: "w1", visible: []Item{{ID: "w1", PreviewPane: "w1:p1"}}}
+	m := model{widePreviewMinCols: 80, selectedID: "w1", visible: []Item{{Kind: KindAgent, ID: "w1", PreviewPane: "w1:p1"}}}
 	next, cmd := m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	got := next.(model)
 	if cmd == nil {

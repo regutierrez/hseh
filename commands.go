@@ -80,7 +80,7 @@ func runPickerList(view string) error {
 		unresolved = state.Unresolved
 	}
 	if view != picker.ViewAgents {
-		snapshot.GitByDirectory = picker.LoadWorkspaceGit(context.Background(), snapshot)
+		snapshot.GitByDirectory = picker.LoadGit(context.Background(), snapshot, definitions)
 	}
 	items := picker.AppendUnopenedDefinitionItems(picker.BuildItemsWithLayout(view, snapshot, history, layout), view, snapshot, definitions, records, unresolved)
 	doc := picker.ListDocument{

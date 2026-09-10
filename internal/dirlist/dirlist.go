@@ -1,0 +1,125 @@
+package dirlist
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"os/exec"
+	"sort"
+	"strings"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/regutierrez/hseh/internal/trace"
+)
+
+// Timeout bounds one eza run. A directory on a stalled mount must not hold the preview.
+const Timeout = 2 * time.Second
+
+// MaxLines caps listing output so a huge directory cannot flood the preview.
+const MaxLines = 500
+
+// ezaArgs are fixed: the preview shows what eza shows, not a user command. No long format:
+// one name per line keeps filenames visible in a narrow preview column.
+var ezaArgs = []string{"--icons=always", "--color=always", "--group-directories-first", "-a"}
+
+const copyEmptyDirectory = "(empty directory)"
+
+var (
+	ezaOnce sync.Once
+	ezaPath string
+	// lookPath is replaced by tests to force the builtin fallback.
+	lookPath = exec.LookPath
+)
+
+func ezaBinary() string {
+	ezaOnce.Do(func() { ezaPath, _ = lookPath("eza") })
+	return ezaPath
+}
+
+// Read lists dir. It runs eza when available and falls back to a builtin
+// listing otherwise. The returned text may contain SGR colour sequences.
+func Read(ctx context.Context, dir string) (string, error) {
+	if strings.TrimSpace(dir) == "" {
+		return "", errors.New("no directory to preview")
+	}
+	span := trace.Span("dirlist.read", "dir", dir)
+	defer span()
+	if eza := ezaBinary(); eza != "" {
+		return readEza(ctx, eza, dir)
+	}
+	return readBuiltin(dir)
+}
+
+func readEza(ctx context.Context, eza, dir string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, Timeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, eza, append(append([]string{}, ezaArgs...), "--", dir)...)
+	// eza runs in its own process group so a timeout kills any child it spawned too.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Cancel = func() error {
+		err := syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return os.ErrProcessDone
+		}
+		return err
+	}
+	cmd.WaitDelay = 250 * time.Millisecond
+	var out, stderr bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		return "", fmt.Errorf("eza timed out after %s", Timeout)
+	}
+	if err != nil {
+		if msg := strings.TrimSpace(stderr.String()); msg != "" {
+			return "", errors.New(firstLine(msg))
+		}
+		return "", err
+	}
+	return capLines(strings.TrimRight(out.String(), "\n")), nil
+}
+
+func readBuiltin(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].IsDir() != entries[j].IsDir() {
+			return entries[i].IsDir()
+		}
+		return entries[i].Name() < entries[j].Name()
+	})
+	lines := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() {
+			name += "/"
+		}
+		lines = append(lines, name)
+	}
+	return capLines(strings.Join(lines, "\n")), nil
+}
+
+func capLines(text string) string {
+	if text == "" {
+		return copyEmptyDirectory
+	}
+	lines := strings.Split(text, "\n")
+	if len(lines) <= MaxLines {
+		return text
+	}
+	return strings.Join(lines[:MaxLines], "\n") + fmt.Sprintf("\n… %d more", len(lines)-MaxLines)
+}
+
+func firstLine(text string) string {
+	if i := strings.IndexByte(text, '\n'); i >= 0 {
+		return text[:i]
+	}
+	return text
+}

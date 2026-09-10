@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/regutierrez/hseh/internal/focus"
+	"github.com/regutierrez/hseh/internal/gitinfo"
 	"github.com/regutierrez/hseh/internal/herdr"
 	"github.com/regutierrez/hseh/internal/hsehtest"
 	"github.com/regutierrez/hseh/internal/space"
@@ -35,7 +36,7 @@ func TestDefinitionPickerSanitizesDisplayNotCommand(t *testing.T) {
 		ID: "w1", Name: "n\x1b[31mX", Description: "d\x1b]0;title\x07",
 		ResolvedDir: "/tmp/x", Tabs: []space.DefinitionTab{{Name: "t", Command: "echo \x1b[31mKEEP"}},
 	}
-	item := definitionItem(def, false)
+	item := definitionItem(def, false, gitinfo.WorkspaceGit{})
 	if strings.Contains(item.Rows[0], "\x1b") || strings.Contains(item.PreviewText, "\x1b") {
 		t.Fatalf("display still has controls: %+v %q", item.Rows, item.PreviewText)
 	}
@@ -96,12 +97,16 @@ func TestPickerEscapeCancelsDefinitionAccept(t *testing.T) {
 
 func TestDefinitionPickerShowsRecoveryCommands(t *testing.T) {
 	def := space.Definition{ID: "def-rec", Name: "rec", ResolvedDir: "/tmp/x"}
-	item := definitionItem(def, true)
-	joined := strings.Join(item.Rows, "\n")
-	if !strings.Contains(joined, "recovery needed") {
+	item := definitionItem(def, true, gitinfo.WorkspaceGit{})
+	if len(item.Rows) != 1 || !strings.Contains(item.Rows[0], "(recovery needed)") {
 		t.Fatalf("rows %v", item.Rows)
 	}
-	if !strings.Contains(joined, "hseh recover def-rec --workspace <live-workspace-id>") || !strings.Contains(item.PreviewText, "hseh recover def-rec --create") {
-		t.Fatalf("commands missing: rows=%v preview=%s", item.Rows, item.PreviewText)
+	// The single-line row only carries the tag; the exact commands live in the preview header and the JSON listing.
+	want := []string{"hseh recover def-rec --workspace <live-workspace-id>", "hseh recover def-rec --create"}
+	if len(item.Recovery) != 2 || item.Recovery[0] != want[0] || item.Recovery[1] != want[1] {
+		t.Fatalf("recovery commands %v", item.Recovery)
+	}
+	if !strings.Contains(item.PreviewText, want[0]) || !strings.Contains(item.PreviewText, want[1]) {
+		t.Fatalf("preview header missing commands: %s", item.PreviewText)
 	}
 }

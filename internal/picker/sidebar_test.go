@@ -33,7 +33,7 @@ rows = [[{ token = "workspace", fg = "#89b4fa", bold = true }]]
 	if strings.Contains(strings.Join(items[0].Rows, ""), "\x1b") {
 		t.Fatalf("JSON rows styled: %q", items[0].Rows)
 	}
-	if items[0].Rows[0] != "alpha" {
+	if row := items[0].Rows[0]; !strings.HasSuffix(row, " alpha") || !strings.Contains(row, " herdr") {
 		t.Fatalf("plain row %q", items[0].Rows)
 	}
 }

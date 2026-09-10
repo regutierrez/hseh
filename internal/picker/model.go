@@ -11,6 +11,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/regutierrez/hseh/internal/config"
+	"github.com/regutierrez/hseh/internal/dirlist"
 	"github.com/regutierrez/hseh/internal/focus"
 	"github.com/regutierrez/hseh/internal/gitinfo"
 	"github.com/regutierrez/hseh/internal/herdr"
@@ -31,10 +32,12 @@ const DefaultPreviewLoadingDelay = 500 * time.Millisecond
 
 type bootMsg struct{}
 
+// previewLoadedMsg carries one finished read: a live pane (paneID) or a directory listing (dir).
 type previewLoadedMsg struct {
 	seq      uint64
 	targetID string
 	paneID   string
+	dir      string
 	text     string
 	err      error
 }
@@ -148,14 +151,17 @@ type model struct {
 	// changes until the new read lands so navigation never blanks the pane.
 	previewText         string
 	previewTextLive     bool
+	previewListing      bool
 	previewErr          string
 	previewPane         string
+	previewDir          string
 	previewLoading      bool
 	previewInFlight     bool
 	previewSeq          uint64
 	previewEvery        time.Duration
 	previewLoadingDelay time.Duration
 	readPane            func(ctx context.Context, paneID string) (string, error)
+	readDir             func(ctx context.Context, dir string) (string, error)
 
 	// Catalog state. snapshotReady flips on the first live snapshot; catalogReady
 	// on the first layout/definition load. Until then the list shows loading copy.
@@ -250,20 +256,29 @@ func (m *model) rebuildVisible() {
 	m.allItems = items
 	m.visible, m.searchScratch = filterItemsInto(m.visible[:0], m.searchScratch, items, m.query)
 	m.selectedID = PreselectItemID(m.view, m.visible, m.history, m.launch)
-	// previewPane stays unset here so the first afterSelectionChange treats the
-	// preselected item as a selection change: a hedged read with the loading
-	// indicator, not an unhedged refresh that can sit on Herdr's 100ms tick.
-	if item, ok := m.selectedItem(); ok && item.Kind == KindDefinition {
-		m.previewText = item.PreviewText
-		m.previewTextLive = false
-	}
+	// previewPane and previewDir stay unset here so the first afterSelectionChange
+	// treats the preselected item as a selection change: a hedged read with the
+	// loading indicator, not an unhedged refresh that can sit on Herdr's 100ms tick.
 }
 
 func (m *model) catalogItems() []Item {
 	snapshot := m.snapshot
 	snapshot.GitByDirectory = m.gitByDirectory
 	items := BuildItemsWithLayout(m.view, snapshot, m.history, m.layout)
-	return AppendUnopenedDefinitionItems(items, m.view, m.snapshot, m.definitions, m.associationRecords, m.unresolvedRecords)
+	return AppendUnopenedDefinitionItems(items, m.view, snapshot, m.definitions, m.associationRecords, m.unresolvedRecords)
+}
+
+// previewTarget names what the item previews: a live agent pane, or the directory of a space/template.
+func previewTarget(item Item) (paneID, dir string) {
+	if item.Kind == KindAgent {
+		return item.PreviewPane, ""
+	}
+	return "", item.Path
+}
+
+func (m model) previewTargetMatches(item Item) bool {
+	paneID, dir := previewTarget(item)
+	return paneID == m.previewPane && dir == m.previewDir
 }
 
 func (m model) Init() tea.Cmd {
@@ -394,7 +409,8 @@ func update(m *model, msg tea.Msg) tea.Cmd {
 		m.traceMilestone("catalog_loaded")
 		m.recomputeStatus()
 		if m.snapshotReady {
-			return m.refreshMembership()
+			// Template directories need their own git pass; a pass already running picks them up on the next tick.
+			return tea.Batch(m.refreshMembership(), m.startGit())
 		}
 		return nil
 	case gitLoadedMsg:
@@ -449,18 +465,27 @@ func update(m *model, msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		item, ok := m.selectedItem()
-		if !ok || msg.targetID != m.selectedID || msg.paneID != item.PreviewPane || !m.showsPreview() {
+		if !ok || msg.targetID != m.selectedID || !m.showsPreview() {
+			return nil
+		}
+		if paneID, dir := previewTarget(item); msg.paneID != paneID || msg.dir != dir {
 			return nil
 		}
 		if msg.err != nil {
 			m.previewErr = msg.err.Error()
 			m.previewText = ""
 			m.previewTextLive = false
+			m.previewListing = false
 		} else {
 			m.previewErr = ""
 			m.previewText = msg.text
-			m.previewTextLive = true
+			m.previewTextLive = msg.dir == ""
+			m.previewListing = msg.dir != ""
 			m.traceMilestone("preview_painted")
+		}
+		if msg.dir != "" {
+			// Directory listings are read once per selection; only live panes poll.
+			return nil
 		}
 		return m.tickPreview(m.previewSeq)
 	case acceptedMsg:
@@ -659,8 +684,10 @@ func (m *model) stopPreviewChain() {
 func (m *model) clearPreview() {
 	m.previewText = ""
 	m.previewTextLive = false
+	m.previewListing = false
 	m.previewErr = ""
 	m.previewPane = ""
+	m.previewDir = ""
 	m.previewLoading = false
 }
 
@@ -677,28 +704,24 @@ func (m *model) startPreview(refresh bool) tea.Cmd {
 		m.clearPreview()
 		return nil
 	}
-	if item.Kind == KindDefinition {
-		m.stopPreviewChain()
-		m.previewPane = ""
-		m.previewErr = ""
-		m.previewText = item.PreviewText
-		m.previewTextLive = false
-		return nil
-	}
-	if item.PreviewPane == "" {
+	paneID, dir := previewTarget(item)
+	if paneID == "" && dir == "" {
 		m.stopPreviewChain()
 		m.clearPreview()
 		return nil
 	}
-	if m.previewInFlight && item.PreviewPane == m.previewPane {
+	if m.previewInFlight && m.previewTargetMatches(item) {
 		return nil
+	}
+	if dir != "" {
+		return m.startDirectoryPreview(item, dir)
 	}
 	m.previewInFlight = true
 	m.previewSeq++
 	seq := m.previewSeq
 	targetID := item.ID
-	paneID := item.PreviewPane
 	m.previewPane = paneID
+	m.previewDir = ""
 	if !refresh {
 		m.previewErr = ""
 		m.previewLoading = false
@@ -733,6 +756,54 @@ func (m *model) startPreview(refresh bool) tea.Cmd {
 		}
 	}
 	return tea.Batch(readCmd, loadingCmd)
+}
+
+// startDirectoryPreview lists the selected row's directory once. It never polls and never
+// touches Herdr. Recovery hints (PreviewText) sit above the listing when present.
+func (m *model) startDirectoryPreview(item Item, dir string) tea.Cmd {
+	m.stopPreviewChain()
+	m.previewInFlight = true
+	seq := m.previewSeq
+	targetID := item.ID
+	header := item.PreviewText
+	m.previewPane = ""
+	m.previewDir = dir
+	m.previewErr = ""
+	m.previewLoading = false
+	ctx := m.io().replace(&m.io().preview)
+	read := m.dirReader()
+	readCmd := func() tea.Msg {
+		text, err := read(ctx, dir)
+		if err != nil {
+			return previewLoadedMsg{seq: seq, targetID: targetID, dir: dir, err: err}
+		}
+		if header != "" {
+			text = header + "\n\n" + text
+		}
+		return previewLoadedMsg{seq: seq, targetID: targetID, dir: dir, text: text}
+	}
+	delay := m.previewLoadingDelay
+	if delay <= 0 {
+		delay = DefaultPreviewLoadingDelay
+	}
+	loadingCmd := func() tea.Msg {
+		timer := time.NewTimer(delay)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-timer.C:
+			return previewLoadingMsg{seq: seq}
+		}
+	}
+	return tea.Batch(readCmd, loadingCmd)
+}
+
+func (m *model) dirReader() func(ctx context.Context, dir string) (string, error) {
+	if m.readDir != nil {
+		return m.readDir
+	}
+	return dirlist.Read
 }
 
 func (m *model) startAccept() tea.Cmd {
@@ -806,16 +877,15 @@ func (m *model) afterSelectionChange() tea.Cmd {
 		m.clearPreview()
 		return nil
 	}
-	if item.Kind == KindDefinition || item.PreviewPane == "" {
+	paneID, dir := previewTarget(item)
+	if !m.previewTargetMatches(item) || (paneID == "" && dir == "") {
 		return m.startPreview(false)
 	}
-	if item.PreviewPane == m.previewPane {
-		if m.previewInFlight {
-			return nil
-		}
-		return m.startPreview(true)
+	if m.previewInFlight || dir != "" {
+		// Same pane still reading, or the same directory already listed: nothing to do.
+		return nil
 	}
-	return m.startPreview(false)
+	return m.startPreview(true)
 }
 
 func (m *model) applyQuery() {
@@ -881,7 +951,7 @@ func (m *model) refreshMembership() tea.Cmd {
 		m.clearPreview()
 		return nil
 	}
-	if item.PreviewPane != m.previewPane {
+	if !m.previewTargetMatches(item) {
 		return m.afterSelectionChange()
 	}
 	return nil

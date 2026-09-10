@@ -114,8 +114,9 @@ The initial audience is the user's workflow, with publishable source and persona
 ### Read-only previews
 
 - Show the preselected target's preview immediately on opening.
-- An agent preview shows that agent pane's visible terminal output. A workspace preview shows the active pane in its active tab. It is not a rendered replica of the whole workspace layout.
-- A definition preview shows its directory and configured startup layout as text. Do not run preview commands.
+- An agent preview shows that agent pane's visible terminal output.
+- A Spaces preview lists the selected row's directory, read once per selection: `eza --icons=always --color=always --group-directories-first -a` when `eza` is installed, otherwise a builtin listing. Arguments are fixed, not user-configured. A live space lists its Git checkout root when the active pane is inside a repository, otherwise the active pane's directory; a definition lists its `working_dir`. Live pane output and definition layout text are not shown in Spaces.
+- Spaces rows are one line: status slot, a source badge (`herdr` for live workspaces, `template` for unopened definitions), name, Git branch/status, and the absolute path. The path column hides when the list is narrower than 45 cells; long rows are truncated, never wrapped. Definition descriptions remain searchable but are not displayed.
 - Show previews beside results when the popup content is at least 100 columns wide (`wide_preview_min_columns`, default 100). Narrow popups always hide the preview; there is no results/preview toggle. Stop preview reads when resized to narrow and resume the selected preview when resized back to wide, preserving selection and Herdr focus.
 - Refresh only the selected visible preview. Use read-only Herdr APIs; reads must not focus targets or mark agents seen.
 - Preserve terminal styling safely; terminal output is display data, not instructions to execute.
@@ -159,7 +160,7 @@ The initial audience is the user's workflow, with publishable source and persona
 - After a Herdr server restart, current associations become unresolved identities. They are not live ownership and are not focus targets. `hseh open` and picker Enter block only that identity and print the exact recover commands. Unrelated definitions still open normally.
 - Recover with `hseh recover <definition-id> --workspace <live-workspace-id>` or `hseh recover <definition-id> --create`, exactly one choice. Reconnect records the chosen live workspace and focuses it with no layout or startup commands. Mixed directories are allowed by explicit choice. Never steal a workspace that currently belongs to another definition.
 - Explicit create is only for an unresolved identity. If a current exact association already exists, recover only focuses. Repeat recover after partial create must not replay commands. Recovering one identity must leave sibling unresolved records in place. A later restart moves remaining current records into unresolved without dropping those siblings.
-- Popup and `hseh list --json` keep unresolved definitions visible, say recovery is needed, and show those exact command forms. No extra popup mode.
+- Popup and `hseh list --json` keep unresolved definitions visible, say recovery is needed, and show those exact command forms: the row carries a "recovery needed" tag, the preview and the JSON `recovery` field carry the commands. No extra popup mode.
 
 ### CLI and installation
 
@@ -183,7 +184,7 @@ The initial audience is the user's workflow, with publishable source and persona
 - Focus safety: browsing and cancellation leave focus and seen state unchanged; Enter focuses the exact intended target; external navigation while open is not undone on cancellation.
 - Ordering and history: space MRU, agent priority, previous-target preselection, fallback selection, history from external navigation, no popup history pollution, and preserved quick-switch cycling.
 - Dynamic state: refresh without selection drift, disappearance clearing selection, agent replacement, pane moves, and targets closing between selection and acceptance.
-- Previews: correct agent pane or active workspace pane, selected-only refresh, styling, stale-output clearing, and isolated read failures.
+- Previews: correct agent pane, selected-only refresh, styling, stale-output clearing, and isolated read failures. Spaces directory listings: eza versus builtin fallback, timeout, single read per selection, missing directories, and path-column hiding.
 - Definitions: parsing, per-file error isolation, fixed-directory requirements, directory inheritance, spaces and special characters in paths, four-pane limit, and automatic IDs without formatting loss.
 - Resolution: exact association, rename stability, distinct definitions sharing a directory, conservative adoption, multiple matches, and refusal to take another definition's workspace.
 - Creation: preflight validation, concurrent duplicate prevention, startup commands submitted once, reconnect/adoption submitting none, and partial failure retaining a usable associated workspace.
@@ -213,7 +214,7 @@ The initial audience is the user's workflow, with publishable source and persona
 - Closing spaces, stopping agents, renaming targets, sending prompts, and other management actions from the picker.
 - Automatic reconciliation of changed definitions into running spaces.
 - Automatic rollback that kills partial workspaces, automatic command retries, and application health supervision.
-- Preview-command execution.
+- User-configured preview commands. The fixed `eza` listing is the only external preview tool.
 - Changes to existing Auto Title ownership or Herdr's shared agent-view configuration.
 - Implicit keybinding changes, remote repository creation, publishing, and unpinned binary-download fallbacks.
 
