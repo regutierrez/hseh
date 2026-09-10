@@ -201,16 +201,19 @@ type pluginPaneOpenEnvelope struct {
 	Type string `json:"type"`
 }
 
-// OpenPluginPopup asks Herdr to open the hseh popup pane entrypoint.
+// OpenPluginPopup asks Herdr to open the hseh popup pane entrypoint, sized
+// from popup_width/popup_height in hseh.toml. Config errors are not fatal
+// here: the popup itself reports them in its footer.
 func OpenPluginPopup(view string) error {
 	pluginID := config.PluginID()
+	width, height, _ := config.LoadPopupSize()
 	var envelope pluginPaneOpenEnvelope
 	_, err := CallContext(WithHedge(context.Background()), "plugin.pane.open", map[string]any{
 		"plugin_id":  pluginID,
 		"entrypoint": view,
 		"placement":  "popup",
-		"width":      "85%",
-		"height":     "80%",
+		"width":      width.Param(),
+		"height":     height.Param(),
 		"focus":      true,
 	}, &envelope)
 	if err != nil {

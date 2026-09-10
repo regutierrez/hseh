@@ -50,6 +50,28 @@ nothing outside this module can import it:
 `commands.go` next to `main.go` holds the thin cli command bodies; the
 `*_cli_test.go` files there drive the compiled binary end to end.
 
+## config
+
+`~/.config/herdr/plugins/config/hseh/hseh.toml` (herdr hands popups and
+actions this directory as `HERDR_PLUGIN_CONFIG_DIR`). every key is optional:
+
+```toml
+popup_width = "85%"           # "N%" of the terminal, or a cell count like 160
+popup_height = "80%"
+preview_poll_ms = 500         # live preview refresh while a pane is selected
+wide_preview_min_columns = 100 # narrower popups stack the preview under the list
+trace_file = "/tmp/hseh.trace" # see measuring speed
+```
+
+`popup_width`/`popup_height` apply to `hseh launch` (the `plugin_action`
+keybinding). the `[[panes]]` sizes in `herdr-plugin.toml` are herdr's fallback
+when something else opens the pane without a size. a bad value is reported in
+the popup footer and that dimension falls back to its default.
+
+colors follow the `[theme]` in herdr's own `config.toml`, and the sidebar rows
+and status indicator style follow its `[ui]` section, so those need no hseh
+config.
+
 ## measuring speed
 
 set `HSEH_TRACE` to a file path and hseh appends one line per timed event

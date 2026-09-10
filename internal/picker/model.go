@@ -943,6 +943,8 @@ func Run(view string) error {
 	poll, configErrs := config.LoadPreviewPollInterval()
 	wideMin, moreErrs := config.LoadWidePreviewMinColumns()
 	configErrs = append(configErrs, moreErrs...)
+	_, _, sizeErrs := config.LoadPopupSize()
+	configErrs = append(configErrs, sizeErrs...)
 	theme, themeErrs := loadTheme("")
 	configErrs = append(configErrs, themeErrs...)
 	m := newAsyncModel(view, theme, poll, wideMin, configErrs)

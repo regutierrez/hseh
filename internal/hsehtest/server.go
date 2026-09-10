@@ -40,7 +40,16 @@ type Server struct {
 	methods       []string
 	commands      []string
 	created       []string
+	popupOpens    []PopupOpen
 	nextWorkspace int
+}
+
+// PopupOpen is the geometry of one plugin.pane.open call. Width and Height
+// decode as string ("70%") or float64 (cells), mirroring the JSON Herdr sees.
+type PopupOpen struct {
+	Entrypoint string `json:"entrypoint"`
+	Width      any    `json:"width"`
+	Height     any    `json:"height"`
 }
 
 // Start listens on a fresh unix socket and returns it with an empty state dir.
@@ -88,6 +97,13 @@ func (s *Server) Created() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return append([]string{}, s.created...)
+}
+
+// PopupOpens lists every plugin.pane.open call so far, in order.
+func (s *Server) PopupOpens() []PopupOpen {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]PopupOpen{}, s.popupOpens...)
 }
 
 // Count returns how many times method was called.
@@ -159,6 +175,9 @@ func (s *Server) serve(conn net.Conn) {
 		}
 		result = herdr.PaneReadEnvelope{Type: "pane_read", Read: &herdr.PaneReadResult{PaneID: params.PaneID, Text: text, Format: "ansi", Source: "visible"}}
 	case "plugin.pane.open":
+		var params PopupOpen
+		_ = json.Unmarshal(req.Params, &params)
+		s.popupOpens = append(s.popupOpens, params)
 		result = map[string]any{"type": "ok"}
 	case "workspace.focus":
 		var params struct {

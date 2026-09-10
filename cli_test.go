@@ -97,17 +97,33 @@ func TestCompiledCLIListRejectsInvalidView(t *testing.T) {
 
 func TestCompiledLaunchOpensPluginPopup(t *testing.T) {
 	snapshot := herdr.SessionSnapshot{Version: "0.9.0"}
-	socketPath, stateDir := hsehtest.Start(t, &hsehtest.Server{Snapshot: snapshot})
+	server := &hsehtest.Server{Snapshot: snapshot}
+	socketPath, stateDir := hsehtest.Start(t, server)
+	configDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(configDir, "hseh.toml"), []byte("popup_width = \"70%\"\npopup_height = 30\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	cmd := exec.Command(compiledHseh, "launch", "spaces")
 	cmd.Env = append(os.Environ(),
 		"HERDR_SOCKET_PATH="+socketPath,
 		"HERDR_PLUGIN_STATE_DIR="+stateDir,
+		"HERDR_PLUGIN_CONFIG_DIR="+configDir,
 		"HERDR_SESSION=hseh-test",
 		"HERDR_PLUGIN_ID=hseh",
 	)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
+	}
+	opens := server.PopupOpens()
+	if len(opens) == 0 {
+		t.Fatal("launch did not call plugin.pane.open")
+	}
+	// The hedge may deliver the request twice; every copy must carry the configured size.
+	for _, open := range opens {
+		if open.Entrypoint != "spaces" || open.Width != "70%" || open.Height != float64(30) {
+			t.Fatalf("plugin.pane.open params %+v, want spaces 70%% x 30 cells", open)
+		}
 	}
 }
 
