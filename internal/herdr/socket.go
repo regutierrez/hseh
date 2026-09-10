@@ -130,6 +130,13 @@ func WithHedge(ctx context.Context) context.Context {
 	return context.WithValue(ctx, hedgeKey{}, true)
 }
 
+// Hedged reports whether ctx carries the WithHedge marker. It lets callers
+// (and tests) confirm a latency-visible read was marked before it went out.
+func Hedged(ctx context.Context) bool {
+	allowed, _ := ctx.Value(hedgeKey{}).(bool)
+	return allowed
+}
+
 func hedgeAllowed(ctx context.Context, method string) bool {
 	allowed, _ := ctx.Value(hedgeKey{}).(bool)
 	return allowed && idempotentMethod(method)

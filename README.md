@@ -94,7 +94,8 @@ ways in `internal/herdr/socket.go`:
 - the request is written before anything else touches the connection
   (the continuity witness is read while the reply is in flight).
 - the calls a person is waiting on are hedged: the first `session.snapshot`,
-  a selection-change `pane.read`, and `launch`'s `plugin.pane.open`. if no reply
+  a selection-change `pane.read` (including the very first preview after the
+  snapshot lands), and `launch`'s `plugin.pane.open`. if no reply
   lands within 2ms the same request goes out on a second connection and the
   first reply wins. `plugin.pane.open` is safe to duplicate because herdr refuses
   a second popup with `ui_busy`, which `launch` treats as success. background

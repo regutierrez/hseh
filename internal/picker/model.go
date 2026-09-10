@@ -250,12 +250,12 @@ func (m *model) rebuildVisible() {
 	m.allItems = items
 	m.visible, m.searchScratch = filterItemsInto(m.visible[:0], m.searchScratch, items, m.query)
 	m.selectedID = PreselectItemID(m.view, m.visible, m.history, m.launch)
-	if item, ok := m.selectedItem(); ok {
-		m.previewPane = item.PreviewPane
-		if item.Kind == KindDefinition {
-			m.previewText = item.PreviewText
-			m.previewTextLive = false
-		}
+	// previewPane stays unset here so the first afterSelectionChange treats the
+	// preselected item as a selection change: a hedged read with the loading
+	// indicator, not an unhedged refresh that can sit on Herdr's 100ms tick.
+	if item, ok := m.selectedItem(); ok && item.Kind == KindDefinition {
+		m.previewText = item.PreviewText
+		m.previewTextLive = false
 	}
 }
 

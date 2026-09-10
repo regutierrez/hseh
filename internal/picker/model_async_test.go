@@ -1,6 +1,7 @@
 package picker
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -217,5 +218,65 @@ func TestSnapshotLiveFetchErrorDoesNotReplaceSnapshot(t *testing.T) {
 	}
 	if !strings.Contains(got.statusErr, "down") {
 		t.Fatalf("live error hidden: %q", got.statusErr)
+	}
+}
+
+// The first preview read is what the user waits for on open, so it must be a
+// hedged selection-change read. Pre-seeding previewPane during rebuildVisible
+// once made afterSelectionChange treat it as an unhedged refresh that could sit
+// on Herdr's 100ms poll tick.
+func TestFirstPreviewReadIsHedged(t *testing.T) {
+	snapshot := herdr.SessionSnapshot{
+		FocusedWorkspaceID: "w1",
+		Workspaces: []herdr.WorkspaceRow{
+			{WorkspaceID: "w1", Label: "alpha", AgentStatus: "unknown", ActiveTabID: "w1:t1"},
+			{WorkspaceID: "w2", Label: "beta", AgentStatus: "unknown", ActiveTabID: "w2:t1"},
+		},
+		Layouts: []herdr.PaneLayout{
+			{TabID: "w1:t1", FocusedPaneID: "w1:p1"},
+			{TabID: "w2:t1", FocusedPaneID: "w2:p1"},
+		},
+	}
+	history := focus.EmptyHistory(herdr.ContinuityWitness{})
+	history.Spaces = []string{"w2", "w1"}
+
+	type read struct {
+		pane   string
+		hedged bool
+	}
+	record := func(reads *[]read) func(ctx context.Context, paneID string) (string, error) {
+		return func(ctx context.Context, paneID string) (string, error) {
+			*reads = append(*reads, read{pane: paneID, hedged: herdr.Hedged(ctx)})
+			return "frame:" + paneID, nil
+		}
+	}
+
+	// Popup path: the async model learns its items from the first snapshotLoadedMsg.
+	var asyncReads []read
+	m := newAsyncModel("spaces", colorTheme{}, 0, 40, nil)
+	m.width, m.height = 120, 30
+	m.readPane = record(&asyncReads)
+	m.snapshotSeq, m.snapshotInFlight = 1, true
+	next, cmd := m.Update(snapshotLoadedMsg{seq: 1, snapshot: snapshot, history: history})
+	got := feedCmd(next.(model), cmd)
+	if len(asyncReads) != 1 || asyncReads[0].pane != "w2:p1" {
+		t.Fatalf("first snapshot reads = %+v, want one read of w2:p1", asyncReads)
+	}
+	if !asyncReads[0].hedged {
+		t.Fatal("first preview read after the snapshot was not hedged")
+	}
+	if !got.previewTextLive || got.previewText != "frame:w2:p1" {
+		t.Fatalf("first preview not painted: live=%v text=%q", got.previewTextLive, got.previewText)
+	}
+
+	// Sync path: a model built with the snapshot in hand boots straight into its first read.
+	var syncReads []read
+	m = newModel("spaces", snapshot, history, defaultSidebarLayout(), 0, 40)
+	m.width, m.height = 120, 30
+	m.readPane = record(&syncReads)
+	next, cmd = m.Update(bootMsg{})
+	_ = feedCmd(next.(model), cmd)
+	if len(syncReads) != 1 || !syncReads[0].hedged {
+		t.Fatalf("boot reads = %+v, want one hedged read", syncReads)
 	}
 }
