@@ -72,7 +72,7 @@ def main():
         r,c=popup_hit(s,'repo-space')
         assert 'main' in s.row(r) and '+1 ~1 ?1' in s.row(r),s.dump()
         assert s.bold_cells[r][c], 'space name not bold'
-        assert s.backgrounds[r][c]==v.GRAY, 'selected row lost background'
+        s.selected_label('repo-space')  # rail UI: accent rail plus bold name marks the selection, not a gray block
         git_col=s.row(r).index('main',c)
         assert s.foregrounds[r][git_col]!=s.foregrounds[r][c], 'git info not gray'
         def status_colors(screen,glyph):
@@ -100,7 +100,7 @@ def main():
         herdr('plugin','action','invoke','hseh.spaces')
         capture('working-again')
         (out/'status-colors.json').write_text(json.dumps(colors,indent=2))
-        (repo/'another').write_text('new');updated=capture('git-updated')
+        (repo/'another').write_text('new');updated=capture('git-updated',3.5)  # git refreshes on a 3s tick (DefaultGitPollMilliseconds)
         assert '+1 ~1 ?2' in updated.dump(), updated.dump()
         os.write(fd,b'\t');s=capture('agents')
         r,c=popup_hit(s,'\U000f03ff Parser tab');assert r>=0
