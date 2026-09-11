@@ -65,6 +65,9 @@ func ApplyPluginEvent(name string, data herdr.PluginEventData) error {
 			return nil
 		}
 		history = Prune(history, snapshot)
+		if name == "pane.focused" {
+			history = AcknowledgeAgentPresentation(history, snapshot, paneID)
+		}
 		return WriteFile(stateDir, history)
 	})
 }

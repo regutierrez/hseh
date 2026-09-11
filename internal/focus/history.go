@@ -48,6 +48,10 @@ type History struct {
 	LastOccupantGeneration map[string]int          `json:"last_occupant_generation,omitempty"`
 	Cycle                  *WorkspaceSwitchCycle   `json:"cycle,omitempty"`
 	Pending                []string                `json:"pending,omitempty"`
+	// AgentPresentationSeeded is true after this switcher took an idle baseline of live agent state_change_seq values.
+	AgentPresentationSeeded bool `json:"agent_presentation_seeded,omitempty"`
+	// AcknowledgedStateChangeSeq is the last presented state_change_seq per agent pane. Idle/done with a higher seq is shown as done until the pane is focused.
+	AcknowledgedStateChangeSeq map[string]uint64 `json:"acknowledged_state_change_seq,omitempty"`
 }
 
 func EmptyHistory(witness herdr.ContinuityWitness) History {
@@ -199,7 +203,7 @@ func Prune(history History, snapshot herdr.SessionSnapshot) History {
 		agents = append(agents, id)
 	}
 	history.Agents = agents
-	return history
+	return syncAgentPresentation(history, snapshot)
 }
 
 func occupantMatchesAgent(occupant PaneOccupant, agent herdr.AgentRow) bool {
@@ -298,7 +302,7 @@ func rekeyMovedPaneOccupant(history History, previousPaneID, paneID string) Hist
 			history.Agents[index].PaneID = paneID
 		}
 	}
-	return history
+	return rekeyAgentPresentationAck(history, previousPaneID, paneID)
 }
 
 // clearPaneOccupant drops a pane that no longer hosts that occupant.

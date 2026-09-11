@@ -63,6 +63,20 @@ func TestFilterPickerItemsKeepsViewOrderOnScoreTie(t *testing.T) {
 	}
 }
 
+func TestAgentRowsProjectUnpresentedIdleAsDone(t *testing.T) {
+	snapshot := herdr.SessionSnapshot{Agents: []herdr.AgentRow{
+		{PaneRow: herdr.PaneRow{PaneID: "w1:p1", Agent: "pi", AgentStatus: "working"}, StateChangeSeq: 4},
+	}}
+	history := focus.Prune(focus.EmptyHistory(herdr.ContinuityWitness{}), snapshot)
+	snapshot.Agents[0].AgentStatus = "idle"
+	snapshot.Agents[0].StateChangeSeq = 5
+	history = focus.Prune(history, snapshot)
+	items := buildAgentItems(snapshot, history, defaultSidebarLayout())
+	if len(items) != 1 || items[0].Status != "done" {
+		t.Fatalf("unpresented idle must render as done, got %+v", items)
+	}
+}
+
 func TestPreselectSkipsAbsentHistoryTarget(t *testing.T) {
 	items := []Item{{Kind: KindAgent, ID: selectionID(KindAgent, "w1:p2#1"), PaneID: "w1:p2"}}
 	history := focus.History{Agents: []focus.AgentLiveID{{PaneID: "w1:p1", Generation: 1}, {PaneID: "w1:p2", Generation: 1}}}
