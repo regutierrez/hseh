@@ -15,7 +15,6 @@ import (
 	"github.com/BurntSushi/toml"
 	"github.com/regutierrez/hseh/internal/config"
 	"github.com/regutierrez/hseh/internal/lockfile"
-	"github.com/regutierrez/hseh/internal/termtext"
 )
 
 const (
@@ -373,8 +372,4 @@ func findDefinitionByID(defs []Definition, id string) (Definition, bool) {
 		}
 	}
 	return Definition{}, false
-}
-
-func SanitizeDisplayText(value string) string {
-	return strings.TrimSpace(termtext.StripControls(value))
 }

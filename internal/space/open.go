@@ -49,26 +49,19 @@ func withOpenLock(ctx context.Context, fn func() (OpenResult, error)) (OpenResul
 	return result, err
 }
 
-func workspaceGitCheckoutDir(workspace herdr.WorkspaceRow) string {
-	if workspace.Worktree == nil {
-		return ""
+func workspaceDirectorySignal(snapshot herdr.SessionSnapshot, workspace herdr.WorkspaceRow) (string, bool) {
+	if workspace.Worktree != nil {
+		path := strings.TrimSpace(workspace.Worktree.CheckoutPath)
+		if path != "" {
+			if canonical, err := canonicalizeDirPath(path); err == nil {
+				return canonical, true
+			}
+		}
 	}
-	path := strings.TrimSpace(workspace.Worktree.CheckoutPath)
-	if path == "" {
-		return ""
-	}
-	canonical, err := canonicalizeDirPath(path)
-	if err != nil {
-		return ""
-	}
-	return canonical
-}
-
-func workspaceUniformPaneDir(snapshot herdr.SessionSnapshot, workspaceID string) (string, bool) {
 	var dir string
 	found := false
 	for _, pane := range snapshot.Panes {
-		if pane.WorkspaceID != workspaceID {
+		if pane.WorkspaceID != workspace.WorkspaceID {
 			continue
 		}
 		raw := strings.TrimSpace(pane.Cwd)
@@ -92,13 +85,6 @@ func workspaceUniformPaneDir(snapshot herdr.SessionSnapshot, workspaceID string)
 		return "", false
 	}
 	return dir, true
-}
-
-func workspaceDirectorySignal(snapshot herdr.SessionSnapshot, workspace herdr.WorkspaceRow) (string, bool) {
-	if checkout := workspaceGitCheckoutDir(workspace); checkout != "" {
-		return checkout, true
-	}
-	return workspaceUniformPaneDir(snapshot, workspace.WorkspaceID)
 }
 
 func eligibleAdoptionWorkspaceIDs(snapshot herdr.SessionSnapshot, history focus.History, state AssociationState, identity AssociationRecord) []string {

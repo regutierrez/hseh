@@ -26,14 +26,13 @@ func ProjectedWorkspaceAgentStatus(workspaceID, snapshotStatus string, agents []
 		return snapshotStatus
 	}
 	best := ""
-	bestRank := -1
+	bestRank := AgentPriorityRank("") + 1
 	for _, agent := range agents {
 		if agent.WorkspaceID != workspaceID {
 			continue
 		}
 		status := ProjectedAgentStatus(agent.AgentStatus, agent.PaneID, agent.StateChangeSeq, history)
-		rank := aggregateAgentStatusRank(status)
-		if rank > bestRank {
+		if rank := AgentPriorityRank(status); rank < bestRank {
 			best = status
 			bestRank = rank
 		}
@@ -42,21 +41,6 @@ func ProjectedWorkspaceAgentStatus(workspaceID, snapshotStatus string, agents []
 		return snapshotStatus
 	}
 	return best
-}
-
-func aggregateAgentStatusRank(status string) int {
-	switch status {
-	case "blocked":
-		return 4
-	case "done":
-		return 3
-	case "working":
-		return 2
-	case "idle":
-		return 1
-	default:
-		return 0
-	}
 }
 
 // syncAgentPresentation takes an idle baseline of live state_change_seq values

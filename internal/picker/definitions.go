@@ -15,11 +15,11 @@ func selectionID(kind, target string) string {
 }
 
 func definitionItem(def space.Definition, needsRecovery bool, git gitinfo.WorkspaceGit) Item {
-	name := space.SanitizeDisplayText(def.Name)
-	desc := space.SanitizeDisplayText(def.Description)
-	dir := space.SanitizeDisplayText(def.ResolvedDir)
+	name := sanitizeDisplayText(def.Name)
+	desc := sanitizeDisplayText(def.Description)
+	dir := sanitizeDisplayText(def.ResolvedDir)
 	if dir == "" {
-		dir = space.SanitizeDisplayText(def.WorkingDir)
+		dir = sanitizeDisplayText(def.WorkingDir)
 	}
 	row := spaceRow{source: SourceTemplate, name: name, git: git, path: dir}
 	var recovery []string
@@ -31,7 +31,7 @@ func definitionItem(def space.Definition, needsRecovery bool, git gitinfo.Worksp
 		preview = strings.Join(hints, "\n")
 	}
 	plain, display := renderSpaceRow(row, "") // templates carry no agent status
-	search := strings.Join([]string{plain, desc, space.SanitizeDisplayText(def.SourceFile), space.SanitizeDisplayText(filepath.Base(def.SourceFile))}, " ")
+	search := strings.Join([]string{plain, desc, sanitizeDisplayText(def.SourceFile), sanitizeDisplayText(filepath.Base(def.SourceFile))}, " ")
 	return Item{
 		Kind:         KindDefinition,
 		ID:           selectionID(KindDefinition, def.ID),

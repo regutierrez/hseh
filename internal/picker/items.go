@@ -9,7 +9,6 @@ import (
 	"github.com/regutierrez/hseh/internal/focus"
 	"github.com/regutierrez/hseh/internal/gitinfo"
 	"github.com/regutierrez/hseh/internal/herdr"
-	"github.com/regutierrez/hseh/internal/space"
 	"github.com/regutierrez/hseh/internal/termtext"
 	"github.com/sahilm/fuzzy"
 )
@@ -100,7 +99,7 @@ func buildSpaceItems(snapshot herdr.SessionSnapshot, history focus.History, layo
 		git := gitByDir[dir]
 		// The checkout root is stable while the user moves around inside a repository.
 		path := firstNonEmpty(git.Root, dir)
-		name := space.SanitizeDisplayText(firstNonEmpty(workspace.Label, workspace.WorkspaceID))
+		name := sanitizeDisplayText(firstNonEmpty(workspace.Label, workspace.WorkspaceID))
 		status := focus.ProjectedWorkspaceAgentStatus(workspace.WorkspaceID, workspace.AgentStatus, snapshot.Agents, history)
 		plain, display := renderSpaceRow(spaceRow{status: status, source: SourceHerdr, name: name, git: git, path: path}, layout.StatusIndicators)
 		items = append(items, Item{
@@ -243,19 +242,19 @@ func renderAgentSidebarRows(snapshot herdr.SessionSnapshot, agent herdr.AgentRow
 		tabLabel = tab.Label
 	}
 	values := map[string]string{
-		"state_text":              space.SanitizeDisplayText(firstNonEmpty(agent.StateLabels[agent.AgentStatus], agent.AgentStatus)),
-		"workspace":               space.SanitizeDisplayText(workspaceLabel),
-		"tab":                     space.SanitizeDisplayText(tabLabel),
-		"pane":                    space.SanitizeDisplayText(agent.Label),
-		"agent":                   space.SanitizeDisplayText(firstNonEmpty(agent.DisplayAgent, agent.Agent)),
-		"terminal_title":          space.SanitizeDisplayText(agent.TerminalTitle),
-		"terminal_title_stripped": space.SanitizeDisplayText(agent.TitleStripped),
+		"state_text":              sanitizeDisplayText(firstNonEmpty(agent.StateLabels[agent.AgentStatus], agent.AgentStatus)),
+		"workspace":               sanitizeDisplayText(workspaceLabel),
+		"tab":                     sanitizeDisplayText(tabLabel),
+		"pane":                    sanitizeDisplayText(agent.Label),
+		"agent":                   sanitizeDisplayText(firstNonEmpty(agent.DisplayAgent, agent.Agent)),
+		"terminal_title":          sanitizeDisplayText(agent.TerminalTitle),
+		"terminal_title_stripped": sanitizeDisplayText(agent.TitleStripped),
 	}
 	if agent.AgentStatus != "" {
 		values["state_icon"] = stateIconGlyph(agent.AgentStatus, layout.StatusIndicators)
 	}
 	for name, token := range agent.Tokens {
-		values["$"+name] = space.SanitizeDisplayText(token)
+		values["$"+name] = sanitizeDisplayText(token)
 	}
 	rows := layout.AgentRows
 	if override, ok := layout.AgentRowsByAgent[agent.Agent]; ok {
@@ -267,10 +266,10 @@ func renderAgentSidebarRows(snapshot herdr.SessionSnapshot, agent herdr.AgentRow
 		details, _ = renderSidebarRows(rows[1:], values, agent.AgentStatus)
 	}
 	prefix, styledPrefix := statePrefix(agent.AgentStatus, layout.StatusIndicators)
-	heading := agentHarnessIcon(agent.Agent) + " " + space.SanitizeDisplayText(firstNonEmpty(tabLabel, agent.Label, agent.PaneID))
-	location := space.SanitizeDisplayText(workspaceLabel)
+	heading := agentHarnessIcon(agent.Agent) + " " + sanitizeDisplayText(firstNonEmpty(tabLabel, agent.Label, agent.PaneID))
+	location := sanitizeDisplayText(workspaceLabel)
 	if dir := abbreviatedDirectory(firstNonEmpty(agent.ForegroundCwd, agent.Cwd)); dir != "" {
-		location += " (" + space.SanitizeDisplayText(dir) + ")"
+		location += " (" + sanitizeDisplayText(dir) + ")"
 	}
 	plain = []string{prefix + heading, location}
 	display = []string{styledPrefix + heading, mutedSGR + location + "\x1b[0m"}
@@ -300,6 +299,10 @@ func renderSidebarRows(layout [][]sidebarToken, values map[string]string, status
 		display = append(display, strings.Join(displayParts, " · "))
 	}
 	return plain, display
+}
+
+func sanitizeDisplayText(value string) string {
+	return strings.TrimSpace(termtext.StripControls(value))
 }
 
 func firstNonEmpty(values ...string) string {

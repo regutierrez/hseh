@@ -451,6 +451,7 @@ func filterStrings(ids []string, allowed map[string]bool) []string {
 	return out
 }
 
+// AgentPriorityRank is blocked, done, working, idle, then unknown. Lower sorts first and wins workspace rollup.
 func AgentPriorityRank(status string) int {
 	switch status {
 	case "blocked":
