@@ -67,14 +67,11 @@ func runHseh(args []string) error {
 	}
 }
 
-// parseListArgs accepts `--json` (required) and `--view spaces|agents`.
+// parseListArgs accepts `--view spaces|agents`.
 func parseListArgs(args []string) (view string, err error) {
 	view = picker.ViewSpaces
-	jsonOut := false
 	for i := 0; i < len(args); i++ {
 		switch {
-		case args[i] == "--json":
-			jsonOut = true
 		case args[i] == "--view":
 			if i+1 >= len(args) {
 				return "", fmt.Errorf("hseh list: --view requires spaces or agents")
@@ -86,9 +83,6 @@ func parseListArgs(args []string) (view string, err error) {
 		default:
 			return "", fmt.Errorf("hseh list: unknown argument %s", args[i])
 		}
-	}
-	if !jsonOut {
-		return "", fmt.Errorf("hseh list: --json is required")
 	}
 	return view, nil
 }

@@ -81,7 +81,7 @@ func TestCompiledCLIListJSON(t *testing.T) {
 		},
 	}
 	socketPath, stateDir := hsehtest.Start(t, &hsehtest.Server{Snapshot: snapshot})
-	out, err := runCompiledHseh(hsehtest.Env(socketPath, stateDir, t.TempDir()), "list", "--json", "--view", "spaces")
+	out, err := runCompiledHseh(hsehtest.Env(socketPath, stateDir, t.TempDir()), "list", "--view", "spaces")
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
@@ -108,9 +108,8 @@ func TestCompiledCLIListJSON(t *testing.T) {
 func TestCompiledCLIRejectsBadArguments(t *testing.T) {
 	env := hsehtest.Env("", t.TempDir(), t.TempDir())
 	cases := map[string][]string{
-		"--json is required":         {"list"},
-		"invalid view nope":          {"list", "--json", "--view", "nope"},
-		"invalid view all":           {"list", "--json", "--view=all"},
+		"invalid view nope":          {"list", "--view", "nope"},
+		"invalid view all":           {"list", "--view=all"},
 		"unknown argument --yes":     {"recover", "def-a", "--create", "--yes"},
 		"repeated argument --create": {"recover", "def-a", "--create", "--create"},
 		"definition id is required":  {"open"},
@@ -183,7 +182,7 @@ func TestCompiledListDoesNotAdoptConversationWithoutMove(t *testing.T) {
 	}
 	socketPath, stateDir := hsehtest.Start(t, &hsehtest.Server{Snapshot: snapshot})
 	seedAgentHistory(t, socketPath, stateDir, "shared")
-	if out, err := runCompiledHseh(hsehtest.Env(socketPath, stateDir, t.TempDir()), "list", "--json", "--view", "agents"); err != nil {
+	if out, err := runCompiledHseh(hsehtest.Env(socketPath, stateDir, t.TempDir()), "list", "--view", "agents"); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	got, err := focus.LoadFile(stateDir)
