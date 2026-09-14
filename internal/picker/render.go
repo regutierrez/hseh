@@ -28,6 +28,7 @@ const (
 
 const searchTitle = " Search "
 const searchPrompt = "❯"
+const searchCaret = "▏"
 const selectionRail = "┃"
 const railWidth = 2
 
@@ -148,9 +149,14 @@ func (m model) renderTabs() string {
 	return padDisplayWidth(strings.Join(tabs, " "), m.width) + "\x1b[0m"
 }
 
-// searchBoxLines draws the rounded search box: Search title, prompt, caret, and matched/total count.
+// searchBoxLines draws the rounded Search box, prompt, optional caret, and matched/total count.
+// When search is not enabled the box is grayed out and has no text pointer; / turns those on.
 func (m model) searchBoxLines(width, height int) []string {
 	th := m.th()
+	boxColor := th.Overlay
+	if m.searching {
+		boxColor = th.Accent
+	}
 	minInput := ansi.StringWidth(searchPrompt) + 2 // prompt, space, caret
 	if minInput > width {
 		minInput = width
@@ -171,7 +177,7 @@ func (m model) searchBoxLines(width, height int) []string {
 	input := m.searchInputLine(inputInner)
 	if drawBox {
 		pad := strings.Repeat(" ", sidePad)
-		input = padDisplayWidth(th.Accent+"│\x1b[0m"+pad+input+pad+th.Accent+"│\x1b[0m", width)
+		input = padDisplayWidth(boxColor+"│\x1b[0m"+pad+input+pad+boxColor+"│\x1b[0m", width)
 	}
 	lines := make([]string, height)
 	for i := range lines {
@@ -187,9 +193,9 @@ func (m model) searchBoxLines(width, height int) []string {
 		if ansi.StringWidth(searchTitle) <= borderInner {
 			title = searchTitle
 		}
-		lines[0] = searchHorizontalBorder(th.Accent, "╭", "╮", borderInner, title, width)
+		lines[0] = searchHorizontalBorder(boxColor, "╭", "╮", borderInner, title, width)
 		if height >= 3 {
-			lines[height-1] = searchHorizontalBorder(th.Accent, "╰", "╯", borderInner, "", width)
+			lines[height-1] = searchHorizontalBorder(boxColor, "╰", "╯", borderInner, "", width)
 		}
 	}
 	return lines
@@ -224,7 +230,7 @@ func (m model) searchInputLine(width int) string {
 	count := strconv.Itoa(len(m.visible)) + " / " + strconv.Itoa(len(m.allItems))
 	countWidth := ansi.StringWidth(count)
 	promptWidth := ansi.StringWidth(searchPrompt) + 1
-	wantPrompt, wantCaret, wantCount := true, true, true
+	wantPrompt, wantCaret, wantCount := true, m.searching, true
 	need := func() int {
 		n := 0
 		if wantPrompt {
@@ -252,13 +258,17 @@ func (m model) searchInputLine(width int) string {
 	padW := max(0, width-need()-ansi.StringWidth(visibleText))
 	var b strings.Builder
 	if wantPrompt {
-		b.WriteString(th.Mauve)
+		promptColor := th.Overlay
+		if m.searching {
+			promptColor = th.Mauve
+		}
+		b.WriteString(promptColor)
 		b.WriteString(searchPrompt)
 		b.WriteString("\x1b[0m ")
 	}
 	b.WriteString(visibleText)
 	if wantCaret {
-		b.WriteString(th.Mauve + "▏\x1b[0m")
+		b.WriteString(th.Mauve + searchCaret + "\x1b[0m")
 	}
 	if padW > 0 {
 		b.WriteString(strings.Repeat(" ", padW))

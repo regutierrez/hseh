@@ -108,3 +108,33 @@ func TestViewTabsTrackKeyboardCycle(t *testing.T) {
 		m = next.(model)
 	}
 }
+
+func TestIdleSearchBoxIsGrayWithoutCaret(t *testing.T) {
+	m := newModel("spaces", herdr.SessionSnapshot{
+		Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w1", Label: "alpha"}},
+	}, focus.EmptyHistory(herdr.ContinuityWitness{}), 80)
+	m.width, m.height = 80, 24
+	th := m.th()
+	idle := strings.Join(m.searchBoxLines(40, 3), "\n")
+	if strings.Contains(idle, searchCaret) {
+		t.Fatalf("idle search showed text pointer: %q", idle)
+	}
+	if strings.Contains(idle, th.Accent) {
+		t.Fatalf("idle search used accent instead of gray: %q", idle)
+	}
+	if !strings.Contains(idle, th.Overlay) {
+		t.Fatalf("idle search not grayed out: %q", idle)
+	}
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = next.(model)
+	active := strings.Join(m.searchBoxLines(40, 3), "\n")
+	if !strings.Contains(active, searchCaret) {
+		t.Fatal("search after / missing text pointer")
+	}
+	if !strings.Contains(active, th.Accent) {
+		t.Fatal("search after / missing accent")
+	}
+	if !strings.Contains(active, th.Mauve+searchCaret) {
+		t.Fatalf("search after / caret not mauve: %q", active)
+	}
+}
