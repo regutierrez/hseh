@@ -245,6 +245,8 @@ func (s *Server) serve(conn net.Conn) {
 		_ = json.Unmarshal(req.Params, &params)
 		s.commands = append(s.commands, params.Text)
 		result = map[string]any{"type": "ok"}
+	case "tab.rename", "tab.close", "pane.rename":
+		result = map[string]any{"type": "ok"}
 	default:
 		payload, _ := json.Marshal(map[string]any{"id": req.ID, "error": map[string]any{"code": "unknown_method", "message": "unknown method " + req.Method}})
 		_, _ = conn.Write(append(payload, '\n'))
