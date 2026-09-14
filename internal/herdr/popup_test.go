@@ -1,14 +1,14 @@
-package herdr
+package herdr_test
 
 import (
 	"bufio"
-	"context"
 	"encoding/json"
 	"errors"
 	"net"
 	"path/filepath"
 	"testing"
 
+	"github.com/regutierrez/hseh/internal/herdr"
 	"github.com/regutierrez/hseh/internal/hsehtest"
 )
 
@@ -17,31 +17,58 @@ func TestOpenPluginPopupBusyIsTypedSuccessAndUnknownMethodFails(t *testing.T) {
 	socket, _ := hsehtest.Start(t, server)
 	t.Setenv("HERDR_SOCKET_PATH", socket)
 
-	_, err := callContext(context.Background(), "no.such.method", map[string]any{}, nil)
-	var callErr *CallError
-	if !errors.As(err, &callErr) || callErr.Code != "unknown_method" {
-		t.Fatalf("unknown method: %v", err)
+	code := rawErrorCode(t, socket, "no.such.method")
+	if code != "unknown_method" {
+		t.Fatalf("unknown method code %q, want unknown_method", code)
 	}
 
-	if err := OpenPluginPopup("spaces"); err != nil {
+	if err := herdr.OpenPluginPopup("spaces"); err != nil {
 		t.Fatal(err)
 	}
-	_, err = callContext(context.Background(), "plugin.pane.open", map[string]any{
-		"plugin_id":  "hseh",
-		"entrypoint": "spaces",
-		"placement":  "popup",
-	}, nil)
-	if !errors.As(err, &callErr) || callErr.Code != "ui_busy" {
-		t.Fatalf("second plugin.pane.open: %v", err)
+	code = rawErrorCode(t, socket, "plugin.pane.open")
+	if code != "ui_busy" {
+		t.Fatalf("second plugin.pane.open code %q, want ui_busy", code)
 	}
-	if err := OpenPluginPopup("spaces"); err != nil {
+	if err := herdr.OpenPluginPopup("spaces"); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestOpenPluginPopupDoesNotTreatBusySubstringAsSuccess(t *testing.T) {
-	socketPath := filepath.Join(t.TempDir(), "herdr.sock")
-	listener, err := net.Listen("unix", socketPath)
+func rawErrorCode(t *testing.T, socket, method string) string {
+	t.Helper()
+	conn, err := net.Dial("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	payload, err := json.Marshal(map[string]any{"id": "t1", "method": method, "params": map[string]any{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Write(append(payload, '\n')); err != nil {
+		t.Fatal(err)
+	}
+	line, err := bufio.NewReader(conn).ReadBytes('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	var env struct {
+		Error *struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(line, &env); err != nil {
+		t.Fatal(err)
+	}
+	if env.Error == nil {
+		return ""
+	}
+	return env.Error.Code
+}
+
+func TestOpenPluginPopupMatchesBusyCodeNotMessage(t *testing.T) {
+	socket := filepath.Join(t.TempDir(), "herdr.sock")
+	listener, err := net.Listen("unix", socket)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,10 +92,10 @@ func TestOpenPluginPopupDoesNotTreatBusySubstringAsSuccess(t *testing.T) {
 			}(conn)
 		}
 	}()
-	t.Setenv("HERDR_SOCKET_PATH", socketPath)
+	t.Setenv("HERDR_SOCKET_PATH", socket)
 
-	err = OpenPluginPopup("spaces")
-	var callErr *CallError
+	err = herdr.OpenPluginPopup("spaces")
+	var callErr *herdr.CallError
 	if err == nil || !errors.As(err, &callErr) || callErr.Code != "failed" {
 		t.Fatalf("message substring must not count as busy: %v", err)
 	}
