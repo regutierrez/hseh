@@ -31,7 +31,7 @@ const searchPrompt = "❯"
 const selectionRail = "┃"
 const railWidth = 2
 
-const helpText = "↑↓ move · tab view · enter open · esc close"
+const helpText = "/ search · ↑↓ move · tab view · enter open · esc close"
 
 // pathColumnMinWidth is the narrowest list content that still shows the absolute path column.
 // With the default 50/50 split this is a popup of about 94 columns.
@@ -218,6 +218,9 @@ func (m model) searchInputLine(width int) string {
 	}
 	th := m.th()
 	text := m.query
+	if m.searching {
+		text = "/" + m.query
+	}
 	count := strconv.Itoa(len(m.visible)) + " / " + strconv.Itoa(len(m.allItems))
 	countWidth := ansi.StringWidth(count)
 	promptWidth := ansi.StringWidth(searchPrompt) + 1
