@@ -24,6 +24,7 @@ func launchFromSnapshot(snapshot herdr.SessionSnapshot, history focus.History) l
 }
 
 // preselectItemID chooses the previous target, then first non-current, then current.
+// Agents prefer a done row over most recently used.
 func preselectItemID(view string, items []Item, history focus.History, launch launchContext) string {
 	if len(items) == 0 {
 		return ""
@@ -65,6 +66,9 @@ func previousSpaceID(history focus.History, current string, items []Item) string
 }
 
 func previousAgentID(history focus.History, current string, items []Item) string {
+	if id := firstDoneAgentID(items, current); id != "" {
+		return id
+	}
 	for _, id := range history.Agents {
 		s := id.String()
 		if s == current {
@@ -75,6 +79,20 @@ func previousAgentID(history focus.History, current string, items []Item) string
 				return item.ID
 			}
 		}
+	}
+	return ""
+}
+
+// firstDoneAgentID returns the first agent tagged as done, skipping the focused pane.
+func firstDoneAgentID(items []Item, current string) string {
+	for _, item := range items {
+		if item.Kind != KindAgent || item.Status != "done" {
+			continue
+		}
+		if itemTarget(item) == current {
+			continue
+		}
+		return item.ID
 	}
 	return ""
 }

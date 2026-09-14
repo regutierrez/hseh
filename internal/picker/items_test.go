@@ -52,6 +52,42 @@ func TestPreselectPickerItemIDAgentBelowPriority(t *testing.T) {
 	}
 }
 
+func TestPreselectAgentsPrefersDoneOverRecentlyUsed(t *testing.T) {
+	items := []Item{
+		{Kind: KindAgent, ID: selectionID(KindAgent, "w1:p1#1"), Status: "done"},
+		{Kind: KindAgent, ID: selectionID(KindAgent, "w1:p2#1"), Status: "idle"},
+	}
+	history := focus.History{Agents: []focus.AgentLiveID{{PaneID: "w1:p2", Generation: 1}}}
+	got := preselectItemID(ViewAgents, items, history, launchContext{CurrentAgent: "w9:p9#1"})
+	if got != selectionID(KindAgent, "w1:p1#1") {
+		t.Fatalf("got %q, want done agent over most recently used", got)
+	}
+}
+
+func TestPreselectAgentsPicksFirstDoneInListOrder(t *testing.T) {
+	items := []Item{
+		{Kind: KindAgent, ID: selectionID(KindAgent, "w1:p1#1"), Status: "done"},
+		{Kind: KindAgent, ID: selectionID(KindAgent, "w1:p2#1"), Status: "done"},
+	}
+	history := focus.History{Agents: []focus.AgentLiveID{{PaneID: "w1:p2", Generation: 1}}}
+	got := preselectItemID(ViewAgents, items, history, launchContext{})
+	if got != selectionID(KindAgent, "w1:p1#1") {
+		t.Fatalf("got %q, want first done agent in list order", got)
+	}
+}
+
+func TestPreselectAgentsSkipsCurrentDoneAndUsesRecentlyUsed(t *testing.T) {
+	items := []Item{
+		{Kind: KindAgent, ID: selectionID(KindAgent, "w1:p1#1"), Status: "done"},
+		{Kind: KindAgent, ID: selectionID(KindAgent, "w1:p2#1"), Status: "idle"},
+	}
+	history := focus.History{Agents: []focus.AgentLiveID{{PaneID: "w1:p2", Generation: 1}}}
+	got := preselectItemID(ViewAgents, items, history, launchContext{CurrentAgent: "w1:p1#1"})
+	if got != selectionID(KindAgent, "w1:p2#1") {
+		t.Fatalf("got %q, want most recently used after skipping focused done agent", got)
+	}
+}
+
 func TestFilterPickerItemsKeepsViewOrderOnScoreTie(t *testing.T) {
 	items := []Item{
 		{ID: "a", SearchText: "alpha workspace"},
