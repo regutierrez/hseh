@@ -319,7 +319,7 @@ func (s *Server) handle(method string, raw json.RawMessage) (result any, errCode
 		s.commands = append(s.commands, params.Text)
 		return map[string]any{"type": "ok"}, "", ""
 	default:
-		return nil, "unknown_method", "unknown method "+method
+		return nil, "unknown_method", "unknown method " + method
 	}
 }
 
