@@ -16,8 +16,6 @@ import (
 var requestSeq atomic.Uint64
 
 // CallError is a Herdr RPC failure with the protocol error code intact.
-// callContext used to flatten the envelope to a string; callers that need the
-// code (OpenPluginPopup treats ui_busy as success) must match Code, not Error().
 type CallError struct {
 	Method  string
 	Code    string

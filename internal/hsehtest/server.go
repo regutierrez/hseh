@@ -21,7 +21,7 @@ import (
 // at the returned socket. Every request is answered on its own connection,
 // matching Herdr's one-request-per-connection protocol.
 type Server struct {
-	// Snapshot is returned by session.snapshot and grows as workspaces, tabs and panes are created.
+	// Snapshot is returned by session.snapshot and grows as workspaces are created.
 	Snapshot herdr.SessionSnapshot
 	// FailMethod, when set, makes that method fail on its FailAfter-th call (default first).
 	FailMethod string
@@ -45,8 +45,6 @@ type Server struct {
 	popupOpens    []PopupOpen
 	popupOpen     bool
 	nextWorkspace int
-	nextTab       int
-	nextPane      int
 }
 
 // PopupOpen is the geometry of one plugin.pane.open call. Width and Height
@@ -65,12 +63,6 @@ func Start(t *testing.T, s *Server) (socketPath, stateDir string) {
 	stateDir = filepath.Join(dir, "state")
 	if s.nextWorkspace == 0 {
 		s.nextWorkspace = len(s.Snapshot.Workspaces)
-	}
-	if s.nextTab == 0 {
-		s.nextTab = len(s.Snapshot.Tabs)
-	}
-	if s.nextPane == 0 {
-		s.nextPane = len(s.Snapshot.Panes)
 	}
 	listener, err := net.Listen("unix", socketPath)
 	if err != nil {
@@ -158,58 +150,53 @@ func (s *Server) serve(conn net.Conn) {
 			after = 1
 		}
 		if s.failHits >= after {
-			writeError(conn, req.ID, "failed", "injected "+req.Method)
+			payload, _ := json.Marshal(map[string]any{"id": req.ID, "error": map[string]any{"code": "failed", "message": "injected " + req.Method}})
+			_, _ = conn.Write(append(payload, '\n'))
 			return
 		}
 	}
-	result, errCode, errMsg := s.handle(req.Method, req.Params)
-	if errCode != "" {
-		writeError(conn, req.ID, errCode, errMsg)
-		return
-	}
-	writeResult(conn, req.ID, result)
-}
-
-func (s *Server) handle(method string, raw json.RawMessage) (result any, errCode, errMsg string) {
-	switch method {
+	var result any
+	switch req.Method {
 	case "session.snapshot":
 		snap := s.Snapshot
-		return herdr.SnapshotEnvelope{Type: "session_snapshot", Snapshot: &snap}, "", ""
+		result = herdr.SnapshotEnvelope{Type: "session_snapshot", Snapshot: &snap}
 	case "pane.read":
 		s.Reads.Add(1)
 		text := s.PaneReadText
 		if text == "" {
 			text = "hello"
 		}
-		return herdr.PaneReadEnvelope{Type: "pane_read", Read: &herdr.PaneReadResult{Text: text}}, "", ""
+		result = herdr.PaneReadEnvelope{Type: "pane_read", Read: &herdr.PaneReadResult{Text: text}}
 	case "plugin.pane.open":
 		var params PopupOpen
-		_ = json.Unmarshal(raw, &params)
+		_ = json.Unmarshal(req.Params, &params)
 		s.popupOpens = append(s.popupOpens, params)
 		if s.popupOpen {
-			return nil, "ui_busy", "popup already open"
+			payload, _ := json.Marshal(map[string]any{"id": req.ID, "error": map[string]any{"code": "ui_busy", "message": "popup already open"}})
+			_, _ = conn.Write(append(payload, '\n'))
+			return
 		}
 		s.popupOpen = true
-		return map[string]any{"type": "ok"}, "", ""
+		result = map[string]any{"type": "ok"}
 	case "workspace.focus":
 		var params struct {
 			WorkspaceID string `json:"workspace_id"`
 		}
-		_ = json.Unmarshal(raw, &params)
+		_ = json.Unmarshal(req.Params, &params)
 		s.Focused.Store(params.WorkspaceID)
-		return map[string]any{"type": "ok"}, "", ""
+		result = map[string]any{"type": "ok"}
 	case "tab.focus":
 		var params struct {
 			TabID string `json:"tab_id"`
 		}
-		_ = json.Unmarshal(raw, &params)
+		_ = json.Unmarshal(req.Params, &params)
 		s.FocusedTab.Store(params.TabID)
-		return map[string]any{"type": "ok"}, "", ""
+		result = map[string]any{"type": "ok"}
 	case "agent.focus":
 		var params struct {
 			Target string `json:"target"`
 		}
-		_ = json.Unmarshal(raw, &params)
+		_ = json.Unmarshal(req.Params, &params)
 		agent := herdr.AgentRow{PaneRow: herdr.PaneRow{PaneID: params.Target}}
 		for _, row := range s.Snapshot.Agents {
 			if row.PaneID == params.Target {
@@ -217,250 +204,53 @@ func (s *Server) handle(method string, raw json.RawMessage) (result any, errCode
 				break
 			}
 		}
-		return herdr.AgentFocusEnvelope{Type: "agent_info", Agent: &agent}, "", ""
+		result = herdr.AgentFocusEnvelope{Type: "agent_info", Agent: &agent}
 	case "workspace.create":
 		var params struct {
 			Cwd   string `json:"cwd"`
 			Label string `json:"label"`
 		}
-		_ = json.Unmarshal(raw, &params)
+		_ = json.Unmarshal(req.Params, &params)
 		s.nextWorkspace++
 		ws := "w" + strconv.Itoa(s.nextWorkspace)
-		tab := s.allocTabID(ws)
-		pane := s.allocPaneID(ws)
+		tab := ws + ":t1"
+		pane := ws + ":p1"
 		s.created = append(s.created, ws)
 		s.Snapshot.Workspaces = append(s.Snapshot.Workspaces, herdr.WorkspaceRow{WorkspaceID: ws, Label: params.Label, ActiveTabID: tab})
 		s.Snapshot.Tabs = append(s.Snapshot.Tabs, herdr.TabRow{TabID: tab, Label: params.Label})
 		s.Snapshot.Panes = append(s.Snapshot.Panes, herdr.PaneRow{PaneID: pane, WorkspaceID: ws, TabID: tab, Cwd: params.Cwd})
 		s.Snapshot.Layouts = append(s.Snapshot.Layouts, herdr.PaneLayout{TabID: tab, FocusedPaneID: pane})
-		return map[string]any{
+		result = map[string]any{
 			"type":      "workspace_created",
 			"workspace": map[string]any{"workspace_id": ws},
 			"tab":       map[string]any{"tab_id": tab},
 			"root_pane": map[string]any{"pane_id": pane},
-		}, "", ""
+		}
 	case "tab.create":
 		var params struct {
 			WorkspaceID string `json:"workspace_id"`
 			Label       string `json:"label"`
 			Cwd         string `json:"cwd"`
-			Focus       bool   `json:"focus"`
 		}
-		_ = json.Unmarshal(raw, &params)
-		if !s.workspaceExists(params.WorkspaceID) {
-			return nil, "not_found", "workspace " + params.WorkspaceID + " not found"
-		}
-		tab := s.allocTabID(params.WorkspaceID)
-		pane := s.allocPaneID(params.WorkspaceID)
-		s.Snapshot.Tabs = append(s.Snapshot.Tabs, herdr.TabRow{TabID: tab, Label: params.Label})
-		s.Snapshot.Panes = append(s.Snapshot.Panes, herdr.PaneRow{PaneID: pane, WorkspaceID: params.WorkspaceID, TabID: tab, Cwd: params.Cwd})
-		s.Snapshot.Layouts = append(s.Snapshot.Layouts, herdr.PaneLayout{TabID: tab, FocusedPaneID: pane})
-		if params.Focus {
-			s.setWorkspaceActiveTab(params.WorkspaceID, tab)
-			s.Snapshot.FocusedPaneID = pane
-		}
-		return map[string]any{"type": "tab_created", "tab": map[string]any{"tab_id": tab}, "root_pane": map[string]any{"pane_id": pane}}, "", ""
-	case "tab.rename":
-		var params struct {
-			TabID string `json:"tab_id"`
-			Label string `json:"label"`
-		}
-		_ = json.Unmarshal(raw, &params)
-		if !s.renameTab(params.TabID, params.Label) {
-			return nil, "not_found", "tab " + params.TabID + " not found"
-		}
-		return map[string]any{"type": "ok"}, "", ""
-	case "tab.close":
-		var params struct {
-			TabID string `json:"tab_id"`
-		}
-		_ = json.Unmarshal(raw, &params)
-		if !s.closeTab(params.TabID) {
-			return nil, "not_found", "tab " + params.TabID + " not found"
-		}
-		return map[string]any{"type": "ok"}, "", ""
+		_ = json.Unmarshal(req.Params, &params)
+		tab := params.WorkspaceID + ":t-extra"
+		pane := params.WorkspaceID + ":p-extra"
+		result = map[string]any{"type": "tab_created", "tab": map[string]any{"tab_id": tab}, "root_pane": map[string]any{"pane_id": pane}}
 	case "pane.split":
-		var params struct {
-			TargetPaneID string `json:"target_pane_id"`
-			Cwd          string `json:"cwd"`
-			Focus        bool   `json:"focus"`
-		}
-		_ = json.Unmarshal(raw, &params)
-		target, ok := s.findPane(params.TargetPaneID)
-		if !ok {
-			return nil, "not_found", "pane " + params.TargetPaneID + " not found"
-		}
-		cwd := params.Cwd
-		if cwd == "" {
-			cwd = target.Cwd
-		}
-		pane := s.allocPaneID(target.WorkspaceID)
-		s.Snapshot.Panes = append(s.Snapshot.Panes, herdr.PaneRow{PaneID: pane, WorkspaceID: target.WorkspaceID, TabID: target.TabID, Cwd: cwd})
-		if params.Focus {
-			s.setFocusedPane(target.TabID, pane)
-			s.Snapshot.FocusedPaneID = pane
-		}
-		return map[string]any{"type": "pane_created", "pane": map[string]any{"pane_id": pane}}, "", ""
-	case "pane.rename":
-		var params struct {
-			PaneID string `json:"pane_id"`
-			Label  string `json:"label"`
-		}
-		_ = json.Unmarshal(raw, &params)
-		if !s.renamePane(params.PaneID, params.Label) {
-			return nil, "not_found", "pane " + params.PaneID + " not found"
-		}
-		return map[string]any{"type": "ok"}, "", ""
+		result = map[string]any{"type": "pane_created", "pane": map[string]any{"pane_id": "w1:p-split"}}
 	case "pane.send_input":
 		var params struct {
 			Text string `json:"text"`
 		}
-		_ = json.Unmarshal(raw, &params)
+		_ = json.Unmarshal(req.Params, &params)
 		s.commands = append(s.commands, params.Text)
-		return map[string]any{"type": "ok"}, "", ""
+		result = map[string]any{"type": "ok"}
 	default:
-		return nil, "unknown_method", "unknown method " + method
+		payload, _ := json.Marshal(map[string]any{"id": req.ID, "error": map[string]any{"code": "unknown_method", "message": "unknown method " + req.Method}})
+		_, _ = conn.Write(append(payload, '\n'))
+		return
 	}
-}
-
-func (s *Server) allocTabID(workspaceID string) string {
-	s.nextTab++
-	return workspaceID + ":t" + strconv.Itoa(s.nextTab)
-}
-
-func (s *Server) allocPaneID(workspaceID string) string {
-	s.nextPane++
-	return workspaceID + ":p" + strconv.Itoa(s.nextPane)
-}
-
-func (s *Server) workspaceExists(id string) bool {
-	for _, ws := range s.Snapshot.Workspaces {
-		if ws.WorkspaceID == id {
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Server) findPane(id string) (herdr.PaneRow, bool) {
-	for _, pane := range s.Snapshot.Panes {
-		if pane.PaneID == id {
-			return pane, true
-		}
-	}
-	return herdr.PaneRow{}, false
-}
-
-func (s *Server) setWorkspaceActiveTab(workspaceID, tabID string) {
-	for i, ws := range s.Snapshot.Workspaces {
-		if ws.WorkspaceID == workspaceID {
-			s.Snapshot.Workspaces[i].ActiveTabID = tabID
-			return
-		}
-	}
-}
-
-func (s *Server) setFocusedPane(tabID, paneID string) {
-	for i, layout := range s.Snapshot.Layouts {
-		if layout.TabID == tabID {
-			s.Snapshot.Layouts[i].FocusedPaneID = paneID
-			return
-		}
-	}
-	s.Snapshot.Layouts = append(s.Snapshot.Layouts, herdr.PaneLayout{TabID: tabID, FocusedPaneID: paneID})
-}
-
-func (s *Server) renameTab(tabID, label string) bool {
-	for i, tab := range s.Snapshot.Tabs {
-		if tab.TabID == tabID {
-			s.Snapshot.Tabs[i].Label = label
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Server) renamePane(paneID, label string) bool {
-	for i, pane := range s.Snapshot.Panes {
-		if pane.PaneID == paneID {
-			s.Snapshot.Panes[i].Label = label
-			return true
-		}
-	}
-	return false
-}
-
-func (s *Server) closeTab(tabID string) bool {
-	found := false
-	tabs := make([]herdr.TabRow, 0, len(s.Snapshot.Tabs))
-	for _, tab := range s.Snapshot.Tabs {
-		if tab.TabID == tabID {
-			found = true
-			continue
-		}
-		tabs = append(tabs, tab)
-	}
-	if !found {
-		return false
-	}
-	s.Snapshot.Tabs = tabs
-
-	closedPanes := map[string]bool{}
-	panes := make([]herdr.PaneRow, 0, len(s.Snapshot.Panes))
-	for _, pane := range s.Snapshot.Panes {
-		if pane.TabID == tabID {
-			closedPanes[pane.PaneID] = true
-			continue
-		}
-		panes = append(panes, pane)
-	}
-	s.Snapshot.Panes = panes
-
-	layouts := make([]herdr.PaneLayout, 0, len(s.Snapshot.Layouts))
-	for _, layout := range s.Snapshot.Layouts {
-		if layout.TabID == tabID {
-			continue
-		}
-		layouts = append(layouts, layout)
-	}
-	s.Snapshot.Layouts = layouts
-
-	agents := make([]herdr.AgentRow, 0, len(s.Snapshot.Agents))
-	for _, agent := range s.Snapshot.Agents {
-		if agent.TabID == tabID {
-			continue
-		}
-		agents = append(agents, agent)
-	}
-	s.Snapshot.Agents = agents
-
-	if closedPanes[s.Snapshot.FocusedPaneID] {
-		s.Snapshot.FocusedPaneID = ""
-	}
-	for i, ws := range s.Snapshot.Workspaces {
-		if ws.ActiveTabID == tabID {
-			s.Snapshot.Workspaces[i].ActiveTabID = s.firstTabInWorkspace(ws.WorkspaceID)
-		}
-	}
-	return true
-}
-
-func (s *Server) firstTabInWorkspace(workspaceID string) string {
-	for _, pane := range s.Snapshot.Panes {
-		if pane.WorkspaceID == workspaceID {
-			return pane.TabID
-		}
-	}
-	return ""
-}
-
-func writeResult(conn net.Conn, id string, result any) {
-	payload, _ := json.Marshal(map[string]any{"id": id, "result": result})
-	_, _ = conn.Write(append(payload, '\n'))
-}
-
-func writeError(conn net.Conn, id, code, message string) {
-	payload, _ := json.Marshal(map[string]any{"id": id, "error": map[string]any{"code": code, "message": message}})
+	payload, _ := json.Marshal(map[string]any{"id": req.ID, "result": result})
 	_, _ = conn.Write(append(payload, '\n'))
 }
 
