@@ -16,7 +16,8 @@ func statePrefix(status, mode string) (plain, display string) {
 		return "", ""
 	}
 	icon := stateIconGlyph(status, mode)
-	return icon + " ", stylePlainToken(sidebarToken{Name: "state_icon"}, icon, status) + " "
+	// Herdr's terminal theme uses the terminal palette, not CSS color names.
+	return icon + " ", "\x1b[" + stateIconColor(status) + "m" + icon + "\x1b[0m "
 }
 
 func agentHarnessIcon(agent string) string {

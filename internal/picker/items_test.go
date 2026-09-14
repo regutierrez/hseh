@@ -9,11 +9,11 @@ import (
 )
 
 func TestRenderSidebarRowsOmitsMissingValues(t *testing.T) {
-	rows, _ := renderSidebarRows(tokensFromNames([][]string{{"state_icon", "workspace", "tab"}, {"agent"}, {"$name2"}}), map[string]string{
+	rows := renderSidebarRows(tokensFromNames([][]string{{"state_icon", "workspace", "tab"}, {"agent"}, {"$name2"}}), map[string]string{
 		"state_icon": "idle",
 		"workspace":  "hseh",
 		"agent":      "pi",
-	}, "idle")
+	})
 	if len(rows) != 2 || rows[0] != "idle · hseh" || rows[1] != "pi" {
 		t.Fatalf("got %#v", rows)
 	}

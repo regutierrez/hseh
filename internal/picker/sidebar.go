@@ -5,17 +5,11 @@ import (
 	"os"
 
 	"github.com/BurntSushi/toml"
-	"github.com/charmbracelet/lipgloss"
 	"github.com/regutierrez/hseh/internal/config"
 )
 
-// sidebarToken is one configured sidebar cell, including optional inline style.
 type sidebarToken struct {
-	Name   string
-	Fg     string
-	Bold   bool
-	Dim    bool
-	Styled bool
+	Name string
 }
 
 // sidebarLayout is the parsed Herdr sidebar configuration used by the picker. Spaces rows
@@ -40,7 +34,7 @@ type herdrSidebarFile struct {
 
 func defaultSidebarLayout() sidebarLayout {
 	return sidebarLayout{
-		AgentRows:        tokensFromNames([][]string{{"state_icon", "machine", "workspace", "tab"}, {"agent"}}),
+		AgentRows:        tokensFromNames([][]string{{"agent"}}),
 		AgentRowsByAgent: map[string][][]sidebarToken{},
 		StatusIndicators: "dots",
 	}
@@ -65,7 +59,6 @@ func readHerdrConfig(configPath, scope string, v any) []string {
 	return nil
 }
 
-// loadSidebarLayout reads ui.sidebar agent rows, rows_by_agent, token styles, and status_indicators.
 func loadSidebarLayout(configPath string) (sidebarLayout, []string) {
 	layout := defaultSidebarLayout()
 	var file herdrSidebarFile
@@ -103,27 +96,8 @@ func parseSidebarTokenRows(raw [][]any) [][]sidebarToken {
 	for _, row := range raw {
 		var cells []sidebarToken
 		for _, item := range row {
-			switch value := item.(type) {
-			case string:
-				if value != "" {
-					cells = append(cells, sidebarToken{Name: value})
-				}
-			case map[string]any:
-				name, _ := value["token"].(string)
-				if name == "" {
-					continue
-				}
-				cell := sidebarToken{Name: name, Styled: true}
-				if fg, ok := value["fg"].(string); ok {
-					cell.Fg = fg
-				}
-				if bold, ok := value["bold"].(bool); ok {
-					cell.Bold = bold
-				}
-				if dim, ok := value["dim"].(bool); ok {
-					cell.Dim = dim
-				}
-				cells = append(cells, cell)
+			if value, ok := item.(string); ok && value != "" {
+				cells = append(cells, sidebarToken{Name: value})
 			}
 		}
 		if len(cells) > 0 {
@@ -172,32 +146,4 @@ func stateIconColor(status string) string {
 	default:
 		return "90"
 	}
-}
-
-func stylePlainToken(token sidebarToken, plain, status string) string {
-	if plain == "" {
-		return ""
-	}
-	style := lipgloss.NewStyle()
-	colored := false
-	if token.Name == "state_icon" && token.Fg == "" {
-		// Herdr's terminal theme uses the terminal palette, not CSS color names.
-		plain = "\x1b[" + stateIconColor(status) + "m" + plain + "\x1b[0m"
-	}
-	if token.Styled && token.Fg != "" {
-		style = style.Foreground(lipgloss.Color(token.Fg))
-		colored = true
-	}
-	if token.Styled && token.Bold {
-		style = style.Bold(true)
-		colored = true
-	}
-	if token.Styled && token.Dim {
-		style = style.Faint(true)
-		colored = true
-	}
-	if colored {
-		return style.Render(plain)
-	}
-	return plain
 }

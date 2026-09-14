@@ -20,19 +20,15 @@ import (
 	"github.com/regutierrez/hseh/internal/trace"
 )
 
-// snapshotPollInterval is the live membership/status refresh interval.
-// It is slower than the preview clock: membership changes rarely, terminal output often.
+// snapshotPollInterval is slower than the preview clock: membership changes rarely, terminal output often.
 const snapshotPollInterval = time.Second
 
-// gitPollInterval is the workspace git branch/status refresh interval.
 const gitPollInterval = 3 * time.Second
 
-// defaultPreviewLoadingDelay is how long a new preview may take before "Loading preview…" replaces the last frame.
 const defaultPreviewLoadingDelay = 500 * time.Millisecond
 
 type bootMsg struct{}
 
-// previewLoadedMsg carries one finished read: a live pane (paneID) or a directory listing (dir).
 type previewLoadedMsg struct {
 	seq      uint64
 	targetID string
@@ -42,24 +38,20 @@ type previewLoadedMsg struct {
 	err      error
 }
 
-// previewLoadingMsg fires when a selection-change preview is still in flight after the loading delay.
 type previewLoadingMsg struct{ seq uint64 }
 
-// previewTickMsg re-reads the selected live pane once the previous read finished.
 type previewTickMsg struct{ seq uint64 }
 
 type snapshotTickMsg struct{}
 
 type gitTickMsg struct{}
 
-// snapshotLoadedMsg carries one live refresh. liveErr means the snapshot could not be read at all.
 type snapshotLoadedMsg struct {
 	seq uint64
 	liveState
 	liveErr error
 }
 
-// catalogLoadedMsg carries the sidebar layout and reusable-space definitions loaded after first paint.
 type catalogLoadedMsg struct {
 	layout      sidebarLayout
 	definitions []space.Definition
@@ -135,9 +127,8 @@ type model struct {
 	height             int
 	theme              colorTheme
 
-	// Preview state. previewText is the last frame shown; it survives selection
-	// changes until the new read lands so navigation never blanks the pane.
-	// previewListing marks it as a directory listing rather than a live pane frame.
+	// previewText is the last frame shown; it survives selection changes until
+	// the new read lands so navigation never blanks the pane.
 	previewText         string
 	previewListing      bool
 	previewErr          string
@@ -151,8 +142,6 @@ type model struct {
 	readPane            func(ctx context.Context, paneID string) (string, error)
 	readDir             func(ctx context.Context, dir string) (string, error)
 
-	// Catalog state. snapshotReady flips on the first live snapshot; catalogReady
-	// on the first layout/definition load. Until then the list shows loading copy.
 	snapshotReady    bool
 	catalogReady     bool
 	liveErr          string
@@ -176,7 +165,6 @@ type model struct {
 	milestones    map[string]bool
 }
 
-// newAsyncModel paints chrome first; snapshot, history, layout and definitions load after Init.
 func newAsyncModel(view string, theme colorTheme, pollEvery time.Duration, wideMin int, configErrs []string) model {
 	m := model{
 		view:               view,
@@ -190,7 +178,6 @@ func newAsyncModel(view string, theme colorTheme, pollEvery time.Duration, wideM
 	return m
 }
 
-// recomputeStatus picks the footer error: a failed accept, then live socket, then association, then config.
 func (m *model) recomputeStatus() {
 	switch {
 	case m.acceptErr != "":
@@ -221,7 +208,6 @@ func (m *model) catalogItems() []Item {
 	return assembleItems(m.view, live, m.layout, m.definitions, m.gitByDirectory)
 }
 
-// previewTarget names what the item previews: a live agent pane, or the directory of a space/template.
 func previewTarget(item Item) (paneID, dir string) {
 	if item.Kind == KindAgent {
 		return item.PaneID, ""
@@ -246,6 +232,13 @@ func tickGit() tea.Cmd {
 	return tea.Tick(gitPollInterval, func(time.Time) tea.Msg { return gitTickMsg{} })
 }
 
+func (m model) tickGitIfSpaces() tea.Cmd {
+	if m.view != ViewSpaces {
+		return nil
+	}
+	return tickGit()
+}
+
 func (m model) tickPreview(seq uint64) tea.Cmd {
 	every := m.previewEvery
 	if every <= 0 {
@@ -254,7 +247,6 @@ func (m model) tickPreview(seq uint64) tea.Cmd {
 	return tea.Tick(every, func(time.Time) tea.Msg { return previewTickMsg{seq: seq} })
 }
 
-// showsPreview reports whether any preview pane (side or stacked) is on screen.
 func (m model) showsPreview() bool {
 	return m.frame().mode != previewHidden
 }
@@ -281,7 +273,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-// traceMilestone logs the first occurrence of a named startup milestone.
 func (m *model) traceMilestone(name string) {
 	if m.milestones == nil {
 		m.milestones = map[string]bool{}
@@ -303,7 +294,7 @@ func update(m *model, msg tea.Msg) tea.Cmd {
 		if !m.catalogReady {
 			cmds = append(cmds, m.startCatalog())
 		}
-		cmds = append(cmds, m.startSnapshot(), tickSnapshot(), tickGit())
+		cmds = append(cmds, m.startSnapshot(), tickSnapshot(), m.tickGitIfSpaces())
 		if m.snapshotReady {
 			cmds = append(cmds, m.startGit(), m.afterSelectionChange())
 		}
@@ -332,7 +323,7 @@ func update(m *model, msg tea.Msg) tea.Cmd {
 		if m.quitting {
 			return nil
 		}
-		return tea.Batch(tickGit(), m.startGit())
+		return tea.Batch(m.tickGitIfSpaces(), m.startGit())
 	case previewTickMsg:
 		if m.quitting || msg.seq != m.previewSeq || m.previewInFlight {
 			return nil
@@ -455,10 +446,10 @@ func update(m *model, msg tea.Msg) tea.Cmd {
 			return m.afterSelectionChange()
 		case tea.KeyTab:
 			m.cycleView(1)
-			return m.afterSelectionChange()
+			return tea.Batch(m.tickGitIfSpaces(), m.startGit(), m.afterSelectionChange())
 		case tea.KeyShiftTab:
 			m.cycleView(-1)
-			return m.afterSelectionChange()
+			return tea.Batch(m.tickGitIfSpaces(), m.startGit(), m.afterSelectionChange())
 		case tea.KeyBackspace:
 			if len(m.query) > 0 {
 				r := []rune(m.query)
@@ -597,7 +588,6 @@ func (m *model) paneReader() func(ctx context.Context, paneID string) (string, e
 	}
 }
 
-// stopPreviewChain cancels the in-flight read and invalidates pending ticks and replies.
 func (m *model) stopPreviewChain() {
 	m.io().cancelPreview()
 	m.previewInFlight = false
@@ -667,7 +657,6 @@ func (m *model) startPreview(refresh bool) tea.Cmd {
 	return tea.Batch(readCmd, m.previewLoadingCmd(ctx, seq))
 }
 
-// previewLoadingCmd fires previewLoadingMsg once the loading delay passes, unless the read finishes (cancels ctx) first.
 func (m *model) previewLoadingCmd(ctx context.Context, seq uint64) tea.Cmd {
 	delay := m.previewLoadingDelay
 	if delay <= 0 {
@@ -777,8 +766,6 @@ func (m *model) startAccept() tea.Cmd {
 	}
 }
 
-// afterSelectionChange redirects the preview clock to the selected target. The last
-// frame stays on screen; a different pane starts a selection-change read.
 func (m *model) afterSelectionChange() tea.Cmd {
 	item, ok := m.selectedItem()
 	if !ok {
@@ -791,7 +778,6 @@ func (m *model) afterSelectionChange() tea.Cmd {
 		return m.startPreview(false)
 	}
 	if m.previewInFlight || dir != "" {
-		// Same pane still reading, or the same directory already listed: nothing to do.
 		return nil
 	}
 	return m.startPreview(true)
@@ -807,7 +793,6 @@ func (m *model) applyQuery() {
 	}
 }
 
-// mergePreservingOrder keeps prev's order for rows still in next, then appends next's new rows.
 func mergePreservingOrder(prev, next []Item) []Item {
 	byID := make(map[string]Item, len(next))
 	for _, item := range next {
@@ -829,7 +814,6 @@ func mergePreservingOrder(prev, next []Item) []Item {
 	return merged
 }
 
-// refreshMembership merges fresh catalog rows without reordering rows that merely changed status.
 func (m *model) refreshMembership() tea.Cmd {
 	fresh := m.catalogItems()
 	if m.query == "" {
@@ -902,7 +886,6 @@ const (
 	mouseClickOnlyDisable = "\x1b[?1002l\x1b[?1006l\x1b[?1000l"
 )
 
-// Run opens the interactive picker on the given view and blocks until it exits.
 func Run(view string) error {
 	view, err := ParseView(view)
 	if err != nil {

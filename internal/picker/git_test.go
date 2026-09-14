@@ -47,6 +47,17 @@ func TestGitUsesOnlyActivePaneDirectoryAndLinkedWorktree(t *testing.T) {
 	}
 }
 
+func TestGitTickArmedOnlyOnSpacesView(t *testing.T) {
+	m := model{view: ViewAgents}
+	if cmd := update(&m, gitTickMsg{}); cmd != nil {
+		t.Fatal("agents view rearmed git tick")
+	}
+	m.view = ViewSpaces
+	if cmd := update(&m, gitTickMsg{}); cmd == nil {
+		t.Fatal("spaces view dropped git tick")
+	}
+}
+
 func TestGitRefreshDoesNotOverlapAndCancelsOnExit(t *testing.T) {
 	m := model{view: ViewSpaces}
 	defer m.io().cancelAll()

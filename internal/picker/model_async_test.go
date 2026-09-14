@@ -224,7 +224,6 @@ func TestFirstPreviewReadIsHedged(t *testing.T) {
 		}
 	}
 
-	// Popup path: the async model learns its items from the first snapshotLoadedMsg.
 	var asyncReads []read
 	m := newAsyncModel("agents", colorTheme{}, 0, 40, nil)
 	m.width, m.height = 120, 30
@@ -242,7 +241,6 @@ func TestFirstPreviewReadIsHedged(t *testing.T) {
 		t.Fatalf("first preview not painted: listing=%v text=%q", got.previewListing, got.previewText)
 	}
 
-	// Sync path: a model built with the snapshot in hand boots straight into its first read.
 	var syncReads []read
 	m = newModel("agents", snapshot, history, 40)
 	m.width, m.height = 120, 30

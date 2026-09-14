@@ -16,7 +16,6 @@ const tabRows = 1
 const searchRows = 3
 const footerRows = 1
 
-// Layout minimums. Side-by-side needs room for both panes; stacked needs a few list rows plus a short preview.
 const (
 	minListWidth       = 20
 	minPreviewWidth    = 20
@@ -148,7 +147,6 @@ func (m model) renderTabs() string {
 	return padDisplayWidth(strings.Join(tabs, " "), m.width) + "\x1b[0m"
 }
 
-// searchBoxLines draws the rounded search box: Search title, prompt, caret, and matched/total count.
 func (m model) searchBoxLines(width, height int) []string {
 	th := m.th()
 	minInput := ansi.StringWidth(searchPrompt) + 2 // prompt, space, caret
@@ -269,7 +267,6 @@ func (m model) searchInputLine(width int) string {
 	return padDisplayWidth(b.String(), width)
 }
 
-// clipSearchTail keeps the end of the query visible when it outgrows the input width.
 func clipSearchTail(s string, width int) string {
 	if width < 1 || s == "" {
 		return ""
@@ -401,8 +398,6 @@ func (m model) emptyListCopy() string {
 	}
 }
 
-// wrapItemBlock wraps one item's display rows to the content width, highlighting query
-// matches and, for the selected item, emboldening the primary row.
 func (m model) wrapItemBlock(item Item, selected bool, contentWidth int) []string {
 	if contentWidth < pathColumnMinWidth {
 		item = item.withoutPathColumn()
@@ -431,8 +426,6 @@ type listWindowResult struct {
 	partialHighest bool
 }
 
-// fillListWindow wraps only the blocks that can be visible: the anchor block first, then
-// whole/partial blocks toward the bottom (lower rank index), then toward the top.
 func (m model) fillListWindow(anchor, budget, contentWidth int) listWindowResult {
 	n := len(m.visible)
 	res := listWindowResult{lowest: anchor, highest: anchor}
@@ -634,7 +627,6 @@ func clipLivePreview(text string, width, height int) string {
 	return joinPaddedRows(visible, width, height)
 }
 
-// clipListing shows the top of a directory listing and truncates long entries instead of wrapping them.
 func clipListing(text string, width, height int) string {
 	width, height = max(1, width), max(1, height)
 	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
@@ -693,7 +685,6 @@ func highlightItemRows(item Item, query, style string) []string {
 	return out
 }
 
-// matchedRunesByRow converts SearchText byte offsets into per-row visible rune indexes.
 func matchedRunesByRow(item Item, rowCount int) []map[int]bool {
 	perRow := make([]map[int]bool, rowCount)
 	if len(item.Matches) == 0 || len(item.Rows) == 0 {

@@ -10,12 +10,12 @@ import (
 	"github.com/regutierrez/hseh/internal/herdr"
 )
 
-func TestLoadSidebarLayoutKeepsOrdinaryRowStyles(t *testing.T) {
+func TestLoadSidebarLayoutKeepsDescriptionText(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	body := `
 [ui.sidebar.agents]
-rows = [["state_icon", "workspace", "tab"], [{ token = "workspace", fg = "#89b4fa", bold = true }]]
+rows = [["agent"], [{ token = "workspace", fg = "#89b4fa", bold = true }], ["workspace"]]
 `
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
@@ -24,8 +24,8 @@ rows = [["state_icon", "workspace", "tab"], [{ token = "workspace", fg = "#89b4f
 	if len(errs) != 0 {
 		t.Fatalf("%v", errs)
 	}
-	if len(layout.AgentRows) != 2 || !layout.AgentRows[1][0].Styled || layout.AgentRows[1][0].Fg != "#89b4fa" {
-		t.Fatalf("style dropped: %+v", layout.AgentRows)
+	if len(layout.AgentRows) != 2 || layout.AgentRows[0][0].Name != "agent" || layout.AgentRows[1][0].Name != "workspace" {
+		t.Fatalf("rows: %+v", layout.AgentRows)
 	}
 	items := buildItemsWithLayout("agents", herdr.SessionSnapshot{
 		Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w1", Label: "alpha"}},
@@ -34,7 +34,7 @@ rows = [["state_icon", "workspace", "tab"], [{ token = "workspace", fg = "#89b4f
 	if strings.Contains(strings.Join(items[0].Rows, ""), "\x1b") {
 		t.Fatalf("JSON rows styled: %q", items[0].Rows)
 	}
-	if len(items[0].Rows) != 3 || items[0].Rows[2] != "alpha" {
+	if len(items[0].Rows) != 3 || items[0].Rows[2] != "pi alpha" {
 		t.Fatalf("plain rows %q", items[0].Rows)
 	}
 }

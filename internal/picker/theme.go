@@ -8,7 +8,7 @@ import (
 )
 
 // colorTheme holds SGR prefixes for picker chrome, resolved from Herdr's
-// [theme] configuration. Sidebar row content keeps following sidebarLayout.
+// [theme] configuration.
 type colorTheme struct {
 	Name      string
 	Accent    string // borders, rail, divider

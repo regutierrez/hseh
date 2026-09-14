@@ -30,9 +30,13 @@ func preselectItemID(view string, items []Item, history focus.History, launch la
 	}
 	var wanted string
 	if view == ViewAgents {
-		wanted = previousAgentID(history, launch.CurrentAgent, items)
+		ids := make([]string, len(history.Agents))
+		for i, id := range history.Agents {
+			ids[i] = id.String()
+		}
+		wanted = previousID(ids, launch.CurrentAgent, items, KindAgent)
 	} else {
-		wanted = previousSpaceID(history, launch.CurrentSpace, items)
+		wanted = previousID(history.Spaces, launch.CurrentSpace, items, KindSpace)
 	}
 	if wanted != "" && hasItemID(items, wanted) {
 		return wanted
@@ -50,28 +54,20 @@ func itemTarget(item Item) string {
 	return strings.TrimPrefix(item.ID, KindAgent+":")
 }
 
-func previousSpaceID(history focus.History, current string, items []Item) string {
-	for _, id := range history.Spaces {
+func previousID(ids []string, current string, items []Item, kind string) string {
+	for _, id := range ids {
 		if id == current {
 			continue
 		}
 		for _, item := range items {
-			if item.Kind == KindSpace && item.WorkspaceID == id {
-				return item.ID
+			if item.Kind != kind {
+				continue
 			}
-		}
-	}
-	return ""
-}
-
-func previousAgentID(history focus.History, current string, items []Item) string {
-	for _, id := range history.Agents {
-		s := id.String()
-		if s == current {
-			continue
-		}
-		for _, item := range items {
-			if item.Kind == KindAgent && itemTarget(item) == s {
+			got := item.WorkspaceID
+			if kind == KindAgent {
+				got = itemTarget(item)
+			}
+			if got == id {
 				return item.ID
 			}
 		}
