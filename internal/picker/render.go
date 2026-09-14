@@ -32,7 +32,7 @@ const searchCaret = "▏"
 const selectionRail = "┃"
 const railWidth = 2
 
-const helpText = "/ search · ↑↓ move · tab view · enter open · esc close"
+const helpText = "↑↓ move · tab view · enter open · esc close"
 
 // pathColumnMinWidth is the narrowest list content that still shows the absolute path column.
 // With the default 50/50 split this is a popup of about 94 columns.
@@ -149,14 +149,10 @@ func (m model) renderTabs() string {
 	return padDisplayWidth(strings.Join(tabs, " "), m.width) + "\x1b[0m"
 }
 
-// searchBoxLines draws the rounded Search box, prompt, optional caret, and matched/total count.
-// When search is not enabled the box is grayed out and has no text pointer; / turns those on.
+// searchBoxLines draws the rounded Search box, prompt, caret, and matched/total count.
 func (m model) searchBoxLines(width, height int) []string {
 	th := m.th()
-	boxColor := th.Overlay
-	if m.searching {
-		boxColor = th.Accent
-	}
+	boxColor := th.Accent
 	minInput := ansi.StringWidth(searchPrompt) + 2 // prompt, space, caret
 	if minInput > width {
 		minInput = width
@@ -218,7 +214,6 @@ func searchHorizontalBorder(color, left, right string, inner int, title string, 
 }
 
 // searchInputLine always shows the query; errors live in the footer, never here.
-// / only enables search. It is not inserted into the box.
 func (m model) searchInputLine(width int) string {
 	if width < 1 {
 		return ""
@@ -228,7 +223,7 @@ func (m model) searchInputLine(width int) string {
 	count := strconv.Itoa(len(m.visible)) + " / " + strconv.Itoa(len(m.allItems))
 	countWidth := ansi.StringWidth(count)
 	promptWidth := ansi.StringWidth(searchPrompt) + 1
-	wantPrompt, wantCaret, wantCount := true, m.searching, true
+	wantPrompt, wantCaret, wantCount := true, true, true
 	need := func() int {
 		n := 0
 		if wantPrompt {
@@ -256,11 +251,7 @@ func (m model) searchInputLine(width int) string {
 	padW := max(0, width-need()-ansi.StringWidth(visibleText))
 	var b strings.Builder
 	if wantPrompt {
-		promptColor := th.Overlay
-		if m.searching {
-			promptColor = th.Mauve
-		}
-		b.WriteString(promptColor)
+		b.WriteString(th.Mauve)
 		b.WriteString(searchPrompt)
 		b.WriteString("\x1b[0m ")
 	}

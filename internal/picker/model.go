@@ -120,7 +120,6 @@ func (m *model) io() *cancelSet {
 type model struct {
 	view               string
 	query              string
-	searching          bool
 	allItems           []Item
 	visible            []Item
 	searchScratch      []string
@@ -441,13 +440,6 @@ func update(m *model, msg tea.Msg) tea.Cmd {
 	case tea.KeyMsg:
 		switch msg.Type {
 		case tea.KeyCtrlC, tea.KeyEsc:
-			if msg.Type == tea.KeyEsc && m.searching {
-				m.searching = false
-				m.query = ""
-				m.selectedID = ""
-				m.applyQuery()
-				return m.afterSelectionChange()
-			}
 			m.quitting = true
 			m.pendingAccept = false
 			m.io().cancelAll()
@@ -468,26 +460,15 @@ func update(m *model, msg tea.Msg) tea.Cmd {
 			m.cycleView(-1)
 			return m.afterSelectionChange()
 		case tea.KeyBackspace:
-			if m.searching {
-				if len(m.query) > 0 {
-					r := []rune(m.query)
-					m.query = string(r[:len(r)-1])
-					m.applyQuery()
-				} else {
-					m.searching = false
-				}
-				return m.afterSelectionChange()
+			if len(m.query) > 0 {
+				r := []rune(m.query)
+				m.query = string(r[:len(r)-1])
+				m.applyQuery()
 			}
+			return m.afterSelectionChange()
 		default:
 			if msg.Type == tea.KeyRunes {
-				runes := termtext.StripControls(string(msg.Runes))
-				if !m.searching {
-					if runes == "/" {
-						m.searching = true
-					}
-					break
-				}
-				m.query += runes
+				m.query += termtext.StripControls(string(msg.Runes))
 				m.applyQuery()
 				return m.afterSelectionChange()
 			}

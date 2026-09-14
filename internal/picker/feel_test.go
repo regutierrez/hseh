@@ -237,11 +237,11 @@ func TestFooterDropsSecondaryStatusBeforeHelp(t *testing.T) {
 	if !strings.Contains(wide, "Loading Herdr session") || !strings.Contains(wide, "esc close") {
 		t.Fatalf("wide footer: %q", wide)
 	}
-	tight := termtext.StripControls(m.renderFooter(54))
+	tight := termtext.StripControls(m.renderFooter(50))
 	if strings.Contains(tight, "Loading Herdr session") || !strings.Contains(tight, "esc close") {
 		t.Fatalf("tight footer kept status over help: %q", tight)
 	}
-	if ansi.StringWidth(m.renderFooter(54)) != 54 {
+	if ansi.StringWidth(m.renderFooter(50)) != 50 {
 		t.Fatal("footer width")
 	}
 }
