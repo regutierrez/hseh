@@ -799,11 +799,15 @@ func (m *model) afterSelectionChange() tea.Cmd {
 
 func (m *model) applyQuery() {
 	m.visible, m.searchScratch = filterItemsInto(m.visible[:0], m.searchScratch, m.allItems, m.query)
-	if !hasItemID(m.visible, m.selectedID) {
+	if m.query != "" {
 		m.selectedID = ""
-		if m.query == "" {
-			m.selectedID = preselectItemID(m.view, m.visible, m.history, m.launch)
+		if len(m.visible) > 0 {
+			m.selectedID = m.visible[0].ID
 		}
+		return
+	}
+	if !hasItemID(m.visible, m.selectedID) {
+		m.selectedID = preselectItemID(m.view, m.visible, m.history, m.launch)
 	}
 }
 

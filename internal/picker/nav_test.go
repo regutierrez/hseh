@@ -10,6 +10,29 @@ import (
 	"github.com/regutierrez/hseh/internal/hsehtest"
 )
 
+func TestApplyQuerySelectsFirstHit(t *testing.T) {
+	m := model{
+		allItems: []Item{
+			{ID: "best", SearchText: "zzz"},
+			{ID: "keep", SearchText: "zzz"},
+		},
+		selectedID: "keep",
+		query:      "zzz",
+	}
+	m.applyQuery()
+	if len(m.visible) != 2 || m.visible[0].ID != "best" {
+		t.Fatalf("visible %+v", m.visible)
+	}
+	if m.selectedID != "best" {
+		t.Fatalf("selected %q, want first hit", m.selectedID)
+	}
+	m.query = ""
+	m.applyQuery()
+	if m.selectedID != "best" {
+		t.Fatalf("empty query dropped first hit: %q", m.selectedID)
+	}
+}
+
 func TestQueryRetainedAcrossViewsAndClearedOnRebuild(t *testing.T) {
 	snapshot := herdr.SessionSnapshot{
 		Workspaces: []herdr.WorkspaceRow{
