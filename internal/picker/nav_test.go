@@ -1,6 +1,7 @@
 package picker
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/regutierrez/hseh/internal/focus"
 	"github.com/regutierrez/hseh/internal/herdr"
 	"github.com/regutierrez/hseh/internal/hsehtest"
+	"github.com/regutierrez/hseh/internal/termtext"
 )
 
 func TestQueryRetainedAcrossViewsAndClearedOnRebuild(t *testing.T) {
@@ -38,6 +40,93 @@ func TestQueryRetainedAcrossViewsAndClearedOnRebuild(t *testing.T) {
 	m.applyQuery()
 	if len(m.visible) != 1 {
 		t.Fatalf("cleared query should show all agents, got %d", len(m.visible))
+	}
+}
+
+func TestSearchStartsOffUntilSlash(t *testing.T) {
+	snapshot := herdr.SessionSnapshot{
+		Workspaces: []herdr.WorkspaceRow{
+			{WorkspaceID: "w1", Label: "alpha"},
+			{WorkspaceID: "w2", Label: "beta"},
+		},
+		Agents: []herdr.AgentRow{{PaneRow: herdr.PaneRow{PaneID: "w1:p1", Agent: "pi", DisplayAgent: "beta-bot", AgentStatus: "idle"}}},
+	}
+	m := newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), 80)
+	m.width, m.height = 80, 24
+	preselected := m.selectedID
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'a'}})
+	m = next.(model)
+	if m.query != "" || m.searching {
+		t.Fatalf("letter typed without search: query=%q searching=%v", m.query, m.searching)
+	}
+	if len(m.visible) != 2 {
+		t.Fatalf("letter filtered the list: %d", len(m.visible))
+	}
+	if strings.Contains(termtext.StripControls(m.View()), searchPrompt+" /") {
+		t.Fatal("idle search line showed /")
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = next.(model)
+	if !m.searching || m.query != "" {
+		t.Fatalf("slash: searching=%v query=%q", m.searching, m.query)
+	}
+	if !strings.Contains(termtext.StripControls(m.View()), searchPrompt+" /") {
+		t.Fatal("search line missing /")
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	m = next.(model)
+	if m.query != "b" || len(m.visible) != 1 || m.visible[0].WorkspaceID != "w2" {
+		t.Fatalf("search type: query=%q visible=%+v", m.query, m.visible)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	m = next.(model)
+	if m.view != ViewAgents || !m.searching || m.query != "b" {
+		t.Fatalf("tab while searching: view=%s searching=%v query=%q", m.view, m.searching, m.query)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyShiftTab})
+	m = next.(model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	m = next.(model)
+	if m.query != "" || !m.searching {
+		t.Fatalf("backspace query: query=%q searching=%v", m.query, m.searching)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyBackspace})
+	m = next.(model)
+	if m.searching {
+		t.Fatal("empty backspace left search on")
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = next.(model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	m = next.(model)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m = next.(model)
+	if m.selectedID == "" || m.selectedID == preselected {
+		t.Fatalf("search did not select a non-preselected row: selected=%q preselect=%q", m.selectedID, preselected)
+	}
+	next, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(model)
+	if m.searching || m.query != "" || m.quitting || cmd != nil {
+		t.Fatalf("esc search: searching=%v query=%q quitting=%v cmd=%v", m.searching, m.query, m.quitting, cmd != nil)
+	}
+	if len(m.visible) != 2 {
+		t.Fatalf("esc restore: %d", len(m.visible))
+	}
+	if m.selectedID != preselected {
+		t.Fatalf("esc selected %q want preselect %q", m.selectedID, preselected)
+	}
+	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(model)
+	if !m.quitting || cmd == nil {
+		t.Fatal("esc did not quit")
+	}
+	m = newModel("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), 80)
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'/'}})
+	m = next.(model)
+	next, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	m = next.(model)
+	if !m.quitting || cmd == nil {
+		t.Fatal("ctrl+c did not quit")
 	}
 }
 
