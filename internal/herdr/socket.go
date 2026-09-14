@@ -15,6 +15,19 @@ import (
 
 var requestSeq atomic.Uint64
 
+// CallError is a Herdr RPC failure with the protocol error code intact.
+// callContext used to flatten the envelope to a string; callers that need the
+// code (OpenPluginPopup treats ui_busy as success) must match Code, not Error().
+type CallError struct {
+	Method  string
+	Code    string
+	Message string
+}
+
+func (e *CallError) Error() string {
+	return fmt.Sprintf("hseh herdr socket: %s: %s %s", e.Method, e.Code, e.Message)
+}
+
 // readContinuityWitness is swapped by tests to observe when the witness is read relative to the request write.
 var readContinuityWitness = ReadContinuityWitnessFromConn
 
@@ -100,7 +113,7 @@ func callContext(ctx context.Context, method string, params any, result any) (Co
 		return witness, fmt.Errorf("hseh herdr socket: decode %s: %w", method, err)
 	}
 	if envelope.Error != nil {
-		return witness, fmt.Errorf("hseh herdr socket: %s: %s %s", method, envelope.Error.Code, envelope.Error.Message)
+		return witness, &CallError{Method: method, Code: envelope.Error.Code, Message: envelope.Error.Message}
 	}
 	if result == nil {
 		return witness, nil
