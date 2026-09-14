@@ -93,8 +93,12 @@ func TestSearchStartsOffUntilSlash(t *testing.T) {
 	if !m.searching || m.query != "" {
 		t.Fatalf("slash: searching=%v query=%q", m.searching, m.query)
 	}
-	if !strings.Contains(termtext.StripControls(m.View()), searchPrompt+" /") {
-		t.Fatal("search line missing /")
+	active := termtext.StripControls(m.View())
+	if strings.Contains(active, searchPrompt+" /") {
+		t.Fatal("slash appeared in the search box")
+	}
+	if !strings.Contains(m.View(), searchCaret) {
+		t.Fatal("search after / missing text pointer")
 	}
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
 	m = next.(model)

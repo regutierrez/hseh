@@ -218,15 +218,13 @@ func searchHorizontalBorder(color, left, right string, inner int, title string, 
 }
 
 // searchInputLine always shows the query; errors live in the footer, never here.
+// / only enables search. It is not inserted into the box.
 func (m model) searchInputLine(width int) string {
 	if width < 1 {
 		return ""
 	}
 	th := m.th()
 	text := m.query
-	if m.searching {
-		text = "/" + m.query
-	}
 	count := strconv.Itoa(len(m.visible)) + " / " + strconv.Itoa(len(m.allItems))
 	countWidth := ansi.StringWidth(count)
 	promptWidth := ansi.StringWidth(searchPrompt) + 1
