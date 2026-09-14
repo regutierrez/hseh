@@ -185,19 +185,6 @@ func (s *Server) serve(conn net.Conn) {
 		_ = json.Unmarshal(req.Params, &params)
 		s.FocusedTab.Store(params.TabID)
 		result = map[string]any{"type": "ok"}
-	case "agent.focus":
-		var params struct {
-			Target string `json:"target"`
-		}
-		_ = json.Unmarshal(req.Params, &params)
-		agent := herdr.AgentRow{PaneRow: herdr.PaneRow{PaneID: params.Target}}
-		for _, row := range s.Snapshot.Agents {
-			if row.PaneID == params.Target {
-				agent = row
-				break
-			}
-		}
-		result = herdr.AgentFocusEnvelope{Type: "agent_info", Agent: &agent}
 	case "workspace.create":
 		var params struct {
 			Cwd   string `json:"cwd"`

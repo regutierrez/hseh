@@ -100,22 +100,12 @@ func FocusWorkspaceContext(ctx context.Context, workspaceID string) error {
 	return err
 }
 
-type AgentFocusEnvelope struct {
-	Type  string    `json:"type"`
-	Agent *AgentRow `json:"agent"`
-}
-
-// FocusAgentContext focuses a live agent pane, then syncs the hosted tab from the returned agent_info.
-func FocusAgentContext(ctx context.Context, paneID string) error {
-	var envelope AgentFocusEnvelope
-	_, err := callContext(ctx, "agent.focus", map[string]any{"target": paneID}, &envelope)
-	if err != nil {
-		return err
+// FocusAgentContext focuses the tab that hosts a live agent. It does not focus the agent pane.
+func FocusAgentContext(ctx context.Context, tabID string) error {
+	if tabID == "" {
+		return fmt.Errorf("hseh focus: missing tab_id")
 	}
-	if envelope.Agent == nil || envelope.Agent.TabID == "" {
-		return fmt.Errorf("hseh focus: agent.focus missing tab_id")
-	}
-	_, err = callContext(ctx, "tab.focus", map[string]any{"tab_id": envelope.Agent.TabID}, nil)
+	_, err := callContext(ctx, "tab.focus", map[string]any{"tab_id": tabID}, nil)
 	return err
 }
 
