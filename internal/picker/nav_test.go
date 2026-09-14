@@ -108,6 +108,43 @@ func TestNarrowStopsPreviewReadsAndWideResumes(t *testing.T) {
 	}
 }
 
+func TestEnterFocusesSelectedAgentTab(t *testing.T) {
+	snapshot := herdr.SessionSnapshot{
+		FocusedWorkspaceID: "w1",
+		Workspaces: []herdr.WorkspaceRow{
+			{WorkspaceID: "w1", Label: "alpha", ActiveTabID: "w1:t1"},
+		},
+		Agents: []herdr.AgentRow{{PaneRow: herdr.PaneRow{
+			PaneID:       "w1:p1",
+			TabID:        "w1:t1",
+			WorkspaceID:  "w1",
+			Agent:        "pi",
+			DisplayAgent: "pi",
+			AgentStatus:  "idle",
+		}}},
+	}
+	srv := &hsehtest.Server{Snapshot: snapshot}
+	socket, state := hsehtest.Start(t, srv)
+	t.Setenv("HERDR_SOCKET_PATH", socket)
+	t.Setenv("HERDR_PLUGIN_STATE_DIR", state)
+	m := newModel("agents", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{SocketPath: socket, PeerPID: 1, PeerStartTime: "1"}), 80)
+	m.selectedID = selectionID(KindAgent, "w1:p1#1")
+	cmd := m.startAccept()
+	if cmd == nil {
+		t.Fatal("expected accept")
+	}
+	msg := cmd()
+	if _, ok := msg.(acceptedMsg); !ok {
+		t.Fatalf("got %#v", msg)
+	}
+	if focusedTab, _ := srv.FocusedTab.Load().(string); focusedTab != "w1:t1" {
+		t.Fatalf("focused tab %v", focusedTab)
+	}
+	if srv.Count("agent.focus") != 0 || srv.Count("tab.focus") != 1 {
+		t.Fatalf("methods %v", srv.Methods())
+	}
+}
+
 func TestEnterFocusesSelectedWorkspace(t *testing.T) {
 	snapshot := herdr.SessionSnapshot{
 		FocusedWorkspaceID: "w1",

@@ -763,7 +763,14 @@ func (m *model) startAccept() tea.Cmd {
 			if !ok || selectionID(KindAgent, live.String()) != selectedID {
 				return errorMsg{err: fmt.Errorf("hseh focus: selected occupant was replaced")}
 			}
-			err = herdr.FocusAgentContext(ctx, paneID)
+			tabID := ""
+			for _, agent := range snapshot.Agents {
+				if agent.PaneID == paneID {
+					tabID = agent.TabID
+					break
+				}
+			}
+			err = herdr.FocusAgentContext(ctx, tabID)
 		} else {
 			err = herdr.FocusWorkspaceContext(ctx, workspaceID)
 		}
