@@ -44,8 +44,6 @@ func Read(ctx context.Context, dir string) WorkspaceGit {
 	return result
 }
 
-// readRoot resolves the checkout top level. ok is false for non-repositories,
-// cancelled reads, and directories git cannot inspect.
 func readRoot(ctx context.Context, dir string) (root string, ok bool) {
 	output, err := gitCommand(ctx, dir, "rev-parse", "--show-toplevel").Output()
 	if err != nil {

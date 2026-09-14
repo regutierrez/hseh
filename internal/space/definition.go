@@ -103,8 +103,8 @@ func validateDefinition(def Definition) error {
 	return validateDefinitionTabs(def)
 }
 
-// validateDefinitionTabs copies Herdr Plus tab rules: name required, command or panes, at most 4 panes,
-// split down/right, omitted ratio is an even split. See third_party/herdr-plus/NOTICE.
+// Name required, command or panes, at most 4 panes, split down/right,
+// omitted ratio is an even split.
 func validateDefinitionTabs(def Definition) error {
 	label, source := def.Name, def.SourceFile
 	for i, tab := range def.Tabs {

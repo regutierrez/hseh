@@ -88,9 +88,7 @@ func syncAgentPresentation(history History, snapshot herdr.SessionSnapshot) Hist
 	return history
 }
 
-// AcknowledgeAgentPresentation records that this pane's current state_change_seq
-// was presented, so idle/done projects back to idle.
-func AcknowledgeAgentPresentation(history History, snapshot herdr.SessionSnapshot, paneID string) History {
+func acknowledgeAgentPresentation(history History, snapshot herdr.SessionSnapshot, paneID string) History {
 	if !history.AgentPresentationSeeded || paneID == "" {
 		return history
 	}

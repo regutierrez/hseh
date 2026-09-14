@@ -40,8 +40,6 @@ func ezaBinary() string {
 	return ezaPath
 }
 
-// Read lists dir. It runs eza when available and falls back to a builtin
-// listing otherwise. The returned text may contain SGR colour sequences.
 func Read(ctx context.Context, dir string) (string, error) {
 	if strings.TrimSpace(dir) == "" {
 		return "", errors.New("no directory to preview")

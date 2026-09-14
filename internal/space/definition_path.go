@@ -7,8 +7,7 @@ import (
 	"strings"
 )
 
-// expandPath copies Herdr Plus expandPath: empty or ~ is home,
-// ~/ joins home, $VARS expand, then Clean. See third_party/herdr-plus/NOTICE.
+// Empty or ~ is home, ~/ joins home, $VARS expand, then Clean.
 func expandPath(s string) (string, error) {
 	dir := strings.TrimSpace(s)
 	home, err := os.UserHomeDir()
@@ -25,8 +24,7 @@ func expandPath(s string) (string, error) {
 	return filepath.Clean(os.ExpandEnv(dir)), nil
 }
 
-// resolveNestedDir copies Herdr Plus resolveNestedDir: empty inherits,
-// relative paths join root. See third_party/herdr-plus/NOTICE.
+// Empty inherits; relative paths join root.
 func resolveNestedDir(raw, root string) (string, error) {
 	if strings.TrimSpace(raw) == "" {
 		return "", nil
@@ -41,7 +39,6 @@ func resolveNestedDir(raw, root string) (string, error) {
 	return dir, nil
 }
 
-// effectivePanes copies Herdr Plus tab.effectivePanes. See third_party/herdr-plus/NOTICE.
 func (t DefinitionTab) effectivePanes() []DefinitionPane {
 	if len(t.Panes) == 0 {
 		return []DefinitionPane{{Command: t.Command, WorkingDir: t.WorkingDir}}
@@ -64,9 +61,8 @@ func (t DefinitionTab) effectivePanes() []DefinitionPane {
 	return panes
 }
 
-// splitRatio copies Herdr Plus pane.splitRatio: omitted/zero ratio is an even split
-// and is left out of pane.split; a positive authored share becomes 1-share for Herdr.
-// See third_party/herdr-plus/NOTICE.
+// Omitted/zero ratio is an even split and is left out of pane.split;
+// a positive authored share becomes 1-share for Herdr.
 func (p DefinitionPane) splitRatio() float64 {
 	if p.Ratio <= 0 {
 		return 0

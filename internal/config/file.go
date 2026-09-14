@@ -11,7 +11,6 @@ import (
 	"github.com/BurntSushi/toml"
 )
 
-// DefaultPreviewPollMilliseconds is the selected visible preview poll interval.
 const DefaultPreviewPollMilliseconds = 500
 
 // DefaultWidePreviewMinColumns is the popup content width at which the preview sits beside the list.
@@ -19,8 +18,8 @@ const DefaultWidePreviewMinColumns = 100
 
 // Default popup geometry, matching the [[panes]] entries in herdr-plugin.toml.
 var (
-	DefaultPopupWidth  = PopupSize{Percent: 85}
-	DefaultPopupHeight = PopupSize{Percent: 80}
+	defaultPopupWidth  = PopupSize{Percent: 85}
+	defaultPopupHeight = PopupSize{Percent: 80}
 )
 
 // Settings is hseh.toml with defaults applied. Every key is optional; an invalid
@@ -80,15 +79,14 @@ func parsePopupSize(key string, raw any) (PopupSize, error) {
 	}
 }
 
-// Load reads hseh.toml from the plugin config directory. A missing file is the defaults.
 func Load() (Settings, []string) {
 	settings := Settings{
 		PreviewPoll:           time.Duration(DefaultPreviewPollMilliseconds) * time.Millisecond,
 		WidePreviewMinColumns: DefaultWidePreviewMinColumns,
-		PopupWidth:            DefaultPopupWidth,
-		PopupHeight:           DefaultPopupHeight,
+		PopupWidth:            defaultPopupWidth,
+		PopupHeight:           defaultPopupHeight,
 	}
-	path := filepath.Join(ConfigDir(), "hseh.toml")
+	path := filepath.Join(configDir(), "hseh.toml")
 	payload, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {

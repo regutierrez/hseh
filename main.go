@@ -24,7 +24,6 @@ func main() {
 	}
 }
 
-// viewArg is the optional view name after a subcommand; ParseView validates it.
 func viewArg(args []string) string {
 	if len(args) > 1 {
 		return args[1]
@@ -67,7 +66,6 @@ func runHseh(args []string) error {
 	}
 }
 
-// parseListArgs accepts `--json` (required) and `--view spaces|agents`.
 func parseListArgs(args []string) (view string, err error) {
 	view = picker.ViewSpaces
 	jsonOut := false

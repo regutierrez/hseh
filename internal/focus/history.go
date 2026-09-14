@@ -259,7 +259,6 @@ func recordWorkspaceFocus(history History, workspaceID string) History {
 	return history
 }
 
-// removeWorkspace drops a closed space from history.
 func removeWorkspace(history History, workspaceID string) History {
 	history.Spaces = removeString(history.Spaces, workspaceID)
 	history.Pending = removeString(history.Pending, workspaceID)
@@ -272,7 +271,6 @@ func removeWorkspace(history History, workspaceID string) History {
 	return history
 }
 
-// RecordAgentPaneFocus records the current occupant of a focused agent pane.
 func RecordAgentPaneFocus(history History, paneID string) History {
 	id, ok := CurrentAgentLiveID(history, paneID)
 	if !ok {
@@ -305,7 +303,6 @@ func rekeyMovedPaneOccupant(history History, previousPaneID, paneID string) Hist
 	return rekeyAgentPresentationAck(history, previousPaneID, paneID)
 }
 
-// clearPaneOccupant drops a pane that no longer hosts that occupant.
 func clearPaneOccupant(history History, paneID string) History {
 	if occupant, ok := history.Occupants[paneID]; ok {
 		rememberPaneGeneration(&history, paneID, occupant.Generation)
@@ -466,7 +463,6 @@ func AgentPriorityRank(status string) int {
 	}
 }
 
-// LoadPruned loads witness-checked history and drops dead targets.
 func LoadPruned(snapshot herdr.SessionSnapshot, witness herdr.ContinuityWitness) (History, error) {
 	return update(config.StateDir(), witness, func(history History) History {
 		return Prune(history, snapshot)

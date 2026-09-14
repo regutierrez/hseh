@@ -81,7 +81,6 @@ type SnapshotEnvelope struct {
 	Snapshot *SessionSnapshot `json:"snapshot"`
 }
 
-// LoadSessionSnapshotContext loads session.snapshot.
 func LoadSessionSnapshotContext(ctx context.Context) (SessionSnapshot, ContinuityWitness, error) {
 	var envelope SnapshotEnvelope
 	witness, err := callContext(ctx, "session.snapshot", map[string]any{}, &envelope)
@@ -94,7 +93,6 @@ func LoadSessionSnapshotContext(ctx context.Context) (SessionSnapshot, Continuit
 	return *envelope.Snapshot, witness, nil
 }
 
-// FocusWorkspaceContext focuses a live workspace.
 func FocusWorkspaceContext(ctx context.Context, workspaceID string) error {
 	_, err := callContext(ctx, "workspace.focus", map[string]any{"workspace_id": workspaceID}, nil)
 	return err
@@ -182,7 +180,6 @@ func OpenPluginPopup(view string) error {
 	return nil
 }
 
-// activeWorkspacePaneID returns the active pane in a workspace's active tab.
 func activeWorkspacePaneID(snapshot SessionSnapshot, workspaceID string) string {
 	activeTabID := ""
 	for _, workspace := range snapshot.Workspaces {

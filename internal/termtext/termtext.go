@@ -11,7 +11,6 @@ func KeepSGR(input string) string {
 	return filterTerminalBytes(input, true)
 }
 
-// StripControls removes terminal controls for plain JSON rows and query text.
 func StripControls(input string) string {
 	return filterTerminalBytes(input, false)
 }

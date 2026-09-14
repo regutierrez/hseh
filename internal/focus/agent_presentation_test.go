@@ -41,7 +41,7 @@ func TestPresentedPaneAcknowledgesCompletion(t *testing.T) {
 		Agents: []herdr.AgentRow{agentRow("w1:p1", "working", 4)},
 	})
 	history = Prune(history, snapshot)
-	history = AcknowledgeAgentPresentation(history, snapshot, "w1:p1")
+	history = acknowledgeAgentPresentation(history, snapshot, "w1:p1")
 	got := ProjectedAgentStatus("idle", "w1:p1", 5, history)
 	if got != "idle" {
 		t.Fatalf("presented completion must be idle, got %q", got)

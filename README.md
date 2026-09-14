@@ -91,10 +91,9 @@ their live pane preview.
 
 ## measuring speed
 
-set `HSEH_TRACE` to a file path and hseh appends one line per timed event
-(socket calls, git status, preview reads, update/view durations, and first-time
-startup milestones). unset, the hooks cost nothing. put it in your shell profile
-or herdr's env so popups inherit it:
+set `HSEH_TRACE` to a file path and a local `./hseh` appends one line per timed
+event (socket calls, git status, preview reads, update/view durations, and
+first-time startup milestones). unset, the hooks cost nothing:
 
 ```sh
 export HSEH_TRACE=/tmp/hseh.trace
