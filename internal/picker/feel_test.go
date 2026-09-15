@@ -178,13 +178,11 @@ func TestFirstSnapshotPreselectsDoneAgentOverRecentlyUsed(t *testing.T) {
 	m.width, m.height = 120, 30
 	m.snapshotSeq, m.snapshotInFlight = 1, true
 	history := focus.EmptyHistory(herdr.ContinuityWitness{})
-	history.AgentPresentationSeeded = true
-	history.AcknowledgedStateChangeSeq = map[string]uint64{"w1:p1": 4, "w1:p2": 9}
 	history.Agents = []focus.AgentLiveID{{PaneID: "w1:p2", Generation: 1}}
 	next, _ := m.Update(snapshotLoadedMsg{seq: 1, history: history, snapshot: herdr.SessionSnapshot{
 		FocusedPaneID: "w9:p9",
 		Agents: []herdr.AgentRow{
-			{PaneRow: herdr.PaneRow{PaneID: "w1:p1", WorkspaceID: "w1", Agent: "pi", AgentStatus: "idle", DisplayAgent: "done-bot"}, StateChangeSeq: 5},
+			{PaneRow: herdr.PaneRow{PaneID: "w1:p1", WorkspaceID: "w1", Agent: "pi", AgentStatus: "done", DisplayAgent: "done-bot"}, StateChangeSeq: 5},
 			{PaneRow: herdr.PaneRow{PaneID: "w1:p2", WorkspaceID: "w1", Agent: "pi", AgentStatus: "idle", DisplayAgent: "mru-bot"}, StateChangeSeq: 9},
 		},
 	}})

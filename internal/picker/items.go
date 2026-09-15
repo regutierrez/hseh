@@ -101,14 +101,13 @@ func buildSpaceItems(snapshot herdr.SessionSnapshot, history focus.History, layo
 		// The checkout root is stable while the user moves around inside a repository.
 		path := firstNonEmpty(git.Root, dir)
 		name := space.SanitizeDisplayText(firstNonEmpty(workspace.Label, workspace.WorkspaceID))
-		status := focus.ProjectedWorkspaceAgentStatus(workspace.WorkspaceID, workspace.AgentStatus, snapshot.Agents, history)
-		plain, display := renderSpaceRow(spaceRow{status: status, source: SourceHerdr, name: name, git: git, path: path}, layout.StatusIndicators)
+		plain, display := renderSpaceRow(spaceRow{status: workspace.AgentStatus, source: SourceHerdr, name: name, git: git, path: path}, layout.StatusIndicators)
 		items = append(items, Item{
 			Kind:        KindSpace,
 			ID:          selectionID(KindSpace, workspace.WorkspaceID),
 			WorkspaceID: workspace.WorkspaceID,
 			Label:       termtext.StripControls(workspace.Label),
-			Status:      status,
+			Status:      workspace.AgentStatus,
 			Source:      SourceHerdr,
 			Path:        path,
 			Rows:        []string{plain},
@@ -121,9 +120,6 @@ func buildSpaceItems(snapshot herdr.SessionSnapshot, history focus.History, layo
 
 func buildAgentItems(snapshot herdr.SessionSnapshot, history focus.History, layout sidebarLayout) []Item {
 	agents := append([]herdr.AgentRow{}, snapshot.Agents...)
-	for i := range agents {
-		agents[i].AgentStatus = focus.ProjectedAgentStatus(agents[i].AgentStatus, agents[i].PaneID, agents[i].StateChangeSeq, history)
-	}
 	sort.SliceStable(agents, func(i, j int) bool {
 		left := focus.AgentPriorityRank(agents[i].AgentStatus)
 		right := focus.AgentPriorityRank(agents[j].AgentStatus)
