@@ -10,6 +10,57 @@ import (
 	"github.com/regutierrez/hseh/internal/herdr"
 )
 
+func TestPickerListRendersHerdrSymbolPreview(t *testing.T) {
+	layout := defaultSidebarLayout()
+	layout.StatusIndicators = "symbols"
+	th := resolveTheme("catppuccin", nil)
+	snapshot := herdr.SessionSnapshot{
+		Workspaces: []herdr.WorkspaceRow{
+			{WorkspaceID: "w1", Label: "blocked-space", AgentStatus: "blocked"},
+			{WorkspaceID: "w2", Label: "working-space", AgentStatus: "working"},
+			{WorkspaceID: "w3", Label: "done-space", AgentStatus: "done"},
+			{WorkspaceID: "w4", Label: "idle-space", AgentStatus: "idle"},
+			{WorkspaceID: "w5", Label: "unknown-space", AgentStatus: "unknown"},
+		},
+		Tabs: []herdr.TabRow{
+			{TabID: "w1:t1", Label: "blocked-tab"},
+			{TabID: "w2:t1", Label: "working-tab"},
+			{TabID: "w3:t1", Label: "done-tab"},
+			{TabID: "w4:t1", Label: "idle-tab"},
+			{TabID: "w5:t1", Label: "unknown-tab"},
+		},
+		Agents: []herdr.AgentRow{
+			{PaneRow: herdr.PaneRow{PaneID: "w1:p1", WorkspaceID: "w1", TabID: "w1:t1", Agent: "pi", AgentStatus: "blocked"}},
+			{PaneRow: herdr.PaneRow{PaneID: "w2:p1", WorkspaceID: "w2", TabID: "w2:t1", Agent: "pi", AgentStatus: "working"}},
+			{PaneRow: herdr.PaneRow{PaneID: "w3:p1", WorkspaceID: "w3", TabID: "w3:t1", Agent: "pi", AgentStatus: "done"}},
+			{PaneRow: herdr.PaneRow{PaneID: "w4:p1", WorkspaceID: "w4", TabID: "w4:t1", Agent: "pi", AgentStatus: "idle"}},
+			{PaneRow: herdr.PaneRow{PaneID: "w5:p1", WorkspaceID: "w5", TabID: "w5:t1", Agent: "pi", AgentStatus: "unknown"}},
+		},
+	}
+	history := focus.EmptyHistory(herdr.ContinuityWitness{})
+	spaces := buildSpaceItems(snapshot, history, layout, nil, th)
+	agents := buildAgentItems(snapshot, history, layout, th)
+	want := []struct{ status, glyph string }{{"blocked", "×"}, {"working", "◐"}, {"done", "✓"}, {"idle", "○"}, {"unknown", "·"}}
+	if len(spaces) != 5 || len(agents) != 5 {
+		t.Fatalf("spaces %d agents %d", len(spaces), len(agents))
+	}
+	for i, c := range want {
+		if spaces[i].Status != c.status || !strings.HasPrefix(spaces[i].Rows[0], c.glyph+" ") {
+			t.Fatalf("space %s row %q", c.status, spaces[i].Rows)
+		}
+	}
+	byStatus := map[string]string{}
+	for _, item := range agents {
+		byStatus[item.Status] = item.Rows[0]
+	}
+	for _, c := range want {
+		row, ok := byStatus[c.status]
+		if !ok || !strings.HasPrefix(row, c.glyph+" ") {
+			t.Fatalf("agent %s row %q", c.status, row)
+		}
+	}
+}
+
 func TestLoadSidebarLayoutUsesHerdrSymbolIndicators(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
