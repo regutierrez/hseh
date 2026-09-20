@@ -132,7 +132,7 @@ func TestAgentPriorityOrderBlockedFirst(t *testing.T) {
 		{PaneRow: herdr.PaneRow{PaneID: "p-block", Agent: "pi", AgentStatus: "blocked"}, StateChangeSeq: 1},
 		{PaneRow: herdr.PaneRow{PaneID: "p-work", Agent: "pi", AgentStatus: "working"}, StateChangeSeq: 4},
 	}}
-	items := buildItemsWithLayout("agents", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil)
+	items := buildItemsWithLayout("agents", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil, colorTheme{})
 	want := []string{"p-block", "p-done", "p-work", "p-idle"}
 	if len(items) != 4 {
 		t.Fatalf("%d items", len(items))

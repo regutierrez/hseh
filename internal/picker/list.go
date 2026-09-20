@@ -47,9 +47,9 @@ func loadCatalog() (sidebarLayout, []space.Definition, []string) {
 }
 
 // assembleItems is the one place rows are built: live rows first, then unopened templates.
-func assembleItems(view string, live liveState, layout sidebarLayout, definitions []space.Definition, git map[string]gitinfo.WorkspaceGit) []Item {
-	items := buildItemsWithLayout(view, live.snapshot, live.history, layout, git)
-	return appendUnopenedDefinitionItems(items, view, live.snapshot, definitions, live.records, live.unresolved, git)
+func assembleItems(view string, live liveState, layout sidebarLayout, definitions []space.Definition, git map[string]gitinfo.WorkspaceGit, th colorTheme) []Item {
+	items := buildItemsWithLayout(view, live.snapshot, live.history, layout, git, th)
+	return appendUnopenedDefinitionItems(items, view, live.snapshot, definitions, live.records, live.unresolved, git, th)
 }
 
 // LoadListDocument assembles the rows the popup would show, for `hseh list --json`.
@@ -59,6 +59,8 @@ func LoadListDocument(ctx context.Context, view string) (ListDocument, error) {
 		return ListDocument{}, err
 	}
 	_, errs := config.Load()
+	theme, themeErrs := loadTheme()
+	errs = append(errs, themeErrs...)
 	layout, definitions, catalogErrs := loadCatalog()
 	errs = append(errs, catalogErrs...)
 	live, err := loadLive(ctx)
@@ -75,7 +77,7 @@ func LoadListDocument(ctx context.Context, view string) (ListDocument, error) {
 	return ListDocument{
 		Session: ListSession{Name: config.SessionName(), SocketPath: config.SocketPath()},
 		View:    view,
-		Items:   assembleItems(view, live, layout, definitions, git),
+		Items:   assembleItems(view, live, layout, definitions, git, theme),
 		Errors:  errs,
 	}, nil
 }

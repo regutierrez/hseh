@@ -435,7 +435,7 @@ func TestThemeResolution(t *testing.T) {
 		t.Fatalf("tokyo-night %+v", th)
 	}
 	th = resolveTheme("terminal", nil)
-	if th.Accent != "\x1b[34m" || th.Name != "terminal" {
+	if th.Accent != "\x1b[34m" || th.Mauve != "\x1b[37m" || th.Muted != "\x1b[37m" || th.Overlay != "\x1b[97m" || th.Red != "\x1b[91m" || th.Name != "terminal" {
 		t.Fatalf("terminal %+v", th)
 	}
 	th = resolveTheme("nope", map[string]string{"accent": "#123456", "mauve": "bad"})

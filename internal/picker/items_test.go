@@ -13,7 +13,7 @@ func TestRenderSidebarRowsOmitsMissingValues(t *testing.T) {
 		"state_icon": "idle",
 		"workspace":  "hseh",
 		"agent":      "pi",
-	}, "idle")
+	}, "idle", colorTheme{})
 	if len(rows) != 2 || rows[0] != "idle · hseh" || rows[1] != "pi" {
 		t.Fatalf("got %#v", rows)
 	}
@@ -21,7 +21,7 @@ func TestRenderSidebarRowsOmitsMissingValues(t *testing.T) {
 
 func TestSpaceRowsStripTitleControls(t *testing.T) {
 	snapshot := herdr.SessionSnapshot{Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w1", Label: "safe\x1b[2Junsafe"}}}
-	items := buildSpaceItems(snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil)
+	items := buildSpaceItems(snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil, colorTheme{})
 	if strings.Contains(strings.Join(items[0].Rows, ""), "\x1b") || strings.Contains(items[0].Label, "\x1b") {
 		t.Fatalf("terminal controls survive in plain rows: %q label %q", items[0].Rows, items[0].Label)
 	}
@@ -107,12 +107,12 @@ func TestAgentRowsUseHerdrSnapshotStatus(t *testing.T) {
 	snapshot.Agents[0].AgentStatus = "idle"
 	snapshot.Agents[0].StateChangeSeq = 5
 	history = focus.Prune(history, snapshot)
-	items := buildAgentItems(snapshot, history, defaultSidebarLayout())
+	items := buildAgentItems(snapshot, history, defaultSidebarLayout(), colorTheme{})
 	if len(items) != 1 || items[0].Status != "idle" {
 		t.Fatalf("agent row must show Herdr's idle, got %+v", items)
 	}
 	snapshot.Agents[0].AgentStatus = "done"
-	items = buildAgentItems(snapshot, history, defaultSidebarLayout())
+	items = buildAgentItems(snapshot, history, defaultSidebarLayout(), colorTheme{})
 	if len(items) != 1 || items[0].Status != "done" {
 		t.Fatalf("agent row must show Herdr's done, got %+v", items)
 	}
@@ -128,7 +128,7 @@ func TestSpaceRowsUseHerdrSnapshotStatus(t *testing.T) {
 	second.Workspaces = []herdr.WorkspaceRow{{WorkspaceID: "w1", Label: "alpha", AgentStatus: "idle"}}
 	second.Agents = []herdr.AgentRow{{PaneRow: herdr.PaneRow{PaneID: "w1:p1", WorkspaceID: "w1", Agent: "pi", AgentStatus: "idle"}, StateChangeSeq: 5}}
 	history = focus.Prune(history, second)
-	items := buildSpaceItems(second, history, defaultSidebarLayout(), nil)
+	items := buildSpaceItems(second, history, defaultSidebarLayout(), nil, colorTheme{})
 	if len(items) != 1 || items[0].Status != "idle" {
 		t.Fatalf("space row must show Herdr's idle, got %+v", items)
 	}

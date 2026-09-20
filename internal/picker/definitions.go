@@ -14,7 +14,7 @@ func selectionID(kind, target string) string {
 	return kind + ":" + target
 }
 
-func definitionItem(def space.Definition, needsRecovery bool, git gitinfo.WorkspaceGit) Item {
+func definitionItem(def space.Definition, needsRecovery bool, git gitinfo.WorkspaceGit, th colorTheme) Item {
 	name := space.SanitizeDisplayText(def.Name)
 	desc := space.SanitizeDisplayText(def.Description)
 	dir := space.SanitizeDisplayText(def.ResolvedDir)
@@ -30,7 +30,7 @@ func definitionItem(def space.Definition, needsRecovery bool, git gitinfo.Worksp
 		recovery = hints[1:]
 		preview = strings.Join(hints, "\n")
 	}
-	plain, display := renderSpaceRow(row, "") // templates carry no agent status
+	plain, display := renderSpaceRow(row, "", th) // templates carry no agent status
 	search := strings.Join([]string{plain, desc, space.SanitizeDisplayText(def.SourceFile), space.SanitizeDisplayText(filepath.Base(def.SourceFile))}, " ")
 	return Item{
 		Kind:         KindDefinition,
@@ -49,7 +49,7 @@ func definitionItem(def space.Definition, needsRecovery bool, git gitinfo.Worksp
 
 // appendUnopenedDefinitionItems adds a template row for every definition without a live
 // associated workspace, sorted by name after the live rows.
-func appendUnopenedDefinitionItems(items []Item, view string, snapshot herdr.SessionSnapshot, definitions []space.Definition, records, unresolved []space.AssociationRecord, git map[string]gitinfo.WorkspaceGit) []Item {
+func appendUnopenedDefinitionItems(items []Item, view string, snapshot herdr.SessionSnapshot, definitions []space.Definition, records, unresolved []space.AssociationRecord, git map[string]gitinfo.WorkspaceGit, th colorTheme) []Item {
 	if view == ViewAgents {
 		return items
 	}
@@ -63,7 +63,7 @@ func appendUnopenedDefinitionItems(items []Item, view string, snapshot herdr.Ses
 		if openKeys[space.AssociationIdentityKey(def.ID, def.ResolvedDir)] {
 			continue
 		}
-		extra = append(extra, definitionItem(def, unresolvedKeys[space.AssociationIdentityKey(def.ID, def.ResolvedDir)], git[def.ResolvedDir]))
+		extra = append(extra, definitionItem(def, unresolvedKeys[space.AssociationIdentityKey(def.ID, def.ResolvedDir)], git[def.ResolvedDir], th))
 	}
 	sort.SliceStable(extra, func(i, j int) bool { return extra[i].Label < extra[j].Label })
 	return append(items, extra...)

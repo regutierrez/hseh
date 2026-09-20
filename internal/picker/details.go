@@ -6,17 +6,20 @@ import (
 	"strings"
 )
 
-const mutedSGR = "\x1b[38;5;245m"
+// mutedSGR is the default-theme (catppuccin) subtext0 SGR. Tests that build
+// DisplayRows without a live theme, and rows assembled with an empty theme,
+// use this token instead of a hardcoded 256-color gray.
+var mutedSGR = hexSGR("#a6adc8", false)
 
 // Nerd Fonts 3 glyph: nf-dev-git_branch.
 const gitBranchIcon = "\ue725"
 
-func statePrefix(status, mode string) (plain, display string) {
+func statePrefix(status, mode string, th colorTheme) (plain, display string) {
 	if status == "" {
 		return "", ""
 	}
 	icon := stateIconGlyph(status, mode)
-	return icon + " ", stylePlainToken(sidebarToken{Name: "state_icon"}, icon, status) + " "
+	return icon + " ", stylePlainToken(sidebarToken{Name: "state_icon"}, icon, status, th) + " "
 }
 
 func agentHarnessIcon(agent string) string {
