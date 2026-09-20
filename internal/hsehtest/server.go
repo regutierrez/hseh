@@ -37,15 +37,13 @@ type Server struct {
 	Focused    atomic.Value
 	FocusedTab atomic.Value
 
-	mu               sync.Mutex
-	failHits         int
-	methods          []string
-	commands         []string
-	created          []string
-	closedWorkspaces []string
-	closedPanes      []string
-	popupOpens       []PopupOpen
-	nextWorkspace    int
+	mu            sync.Mutex
+	failHits      int
+	methods       []string
+	commands      []string
+	created       []string
+	popupOpens    []PopupOpen
+	nextWorkspace int
 }
 
 // PopupOpen is the geometry of one plugin.pane.open call. Width and Height
@@ -103,20 +101,6 @@ func (s *Server) Created() []string {
 	return append([]string{}, s.created...)
 }
 
-// ClosedWorkspaces lists workspace ids passed to workspace.close.
-func (s *Server) ClosedWorkspaces() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]string{}, s.closedWorkspaces...)
-}
-
-// ClosedPanes lists pane ids passed to pane.close.
-func (s *Server) ClosedPanes() []string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return append([]string{}, s.closedPanes...)
-}
-
 // PopupOpens lists every plugin.pane.open call so far, in order.
 func (s *Server) PopupOpens() []PopupOpen {
 	s.mu.Lock()
@@ -133,151 +117,6 @@ func (s *Server) Count(method string) int {
 		}
 	}
 	return n
-}
-
-// applyWorkspaceClose removes a workspace and its tabs, panes, agents, and layouts.
-// Caller must hold s.mu.
-func (s *Server) applyWorkspaceClose(workspaceID string) {
-	if workspaceID == "" {
-		return
-	}
-	s.closedWorkspaces = append(s.closedWorkspaces, workspaceID)
-	tabIDs := map[string]bool{}
-	for _, workspace := range s.Snapshot.Workspaces {
-		if workspace.WorkspaceID == workspaceID && workspace.ActiveTabID != "" {
-			tabIDs[workspace.ActiveTabID] = true
-		}
-	}
-	var panes []herdr.PaneRow
-	for _, pane := range s.Snapshot.Panes {
-		if pane.WorkspaceID == workspaceID {
-			tabIDs[pane.TabID] = true
-			if s.Snapshot.FocusedPaneID == pane.PaneID {
-				s.Snapshot.FocusedPaneID = ""
-			}
-			continue
-		}
-		panes = append(panes, pane)
-	}
-	s.Snapshot.Panes = panes
-	var workspaces []herdr.WorkspaceRow
-	for _, workspace := range s.Snapshot.Workspaces {
-		if workspace.WorkspaceID != workspaceID {
-			workspaces = append(workspaces, workspace)
-		}
-	}
-	s.Snapshot.Workspaces = workspaces
-	var agents []herdr.AgentRow
-	for _, agent := range s.Snapshot.Agents {
-		if agent.WorkspaceID != workspaceID {
-			agents = append(agents, agent)
-		}
-	}
-	s.Snapshot.Agents = agents
-	s.dropTabs(tabIDs)
-	if s.Snapshot.FocusedWorkspaceID == workspaceID {
-		s.Snapshot.FocusedWorkspaceID = ""
-	}
-}
-
-// applyPaneClose removes a pane. If it was the last pane in its tab, the tab
-// goes with it; if that was the last tab, the workspace goes too.
-// Caller must hold s.mu.
-func (s *Server) applyPaneClose(paneID string) {
-	if paneID == "" {
-		return
-	}
-	s.closedPanes = append(s.closedPanes, paneID)
-	tabID, workspaceID := "", ""
-	var panes []herdr.PaneRow
-	for _, pane := range s.Snapshot.Panes {
-		if pane.PaneID == paneID {
-			tabID = pane.TabID
-			workspaceID = pane.WorkspaceID
-			continue
-		}
-		panes = append(panes, pane)
-	}
-	s.Snapshot.Panes = panes
-	var agents []herdr.AgentRow
-	for _, agent := range s.Snapshot.Agents {
-		if agent.PaneID != paneID {
-			agents = append(agents, agent)
-		}
-	}
-	s.Snapshot.Agents = agents
-	if s.Snapshot.FocusedPaneID == paneID {
-		s.Snapshot.FocusedPaneID = ""
-	}
-	if tabID == "" {
-		return
-	}
-	if hasPaneInTab(s.Snapshot.Panes, tabID) {
-		return
-	}
-	s.dropTabs(map[string]bool{tabID: true})
-	if workspaceID == "" || hasPaneInWorkspace(s.Snapshot.Panes, workspaceID) {
-		s.repointWorkspaceTab(workspaceID)
-		return
-	}
-	s.applyWorkspaceClose(workspaceID)
-}
-
-func (s *Server) dropTabs(tabIDs map[string]bool) {
-	if len(tabIDs) == 0 {
-		return
-	}
-	var tabs []herdr.TabRow
-	for _, tab := range s.Snapshot.Tabs {
-		if !tabIDs[tab.TabID] {
-			tabs = append(tabs, tab)
-		}
-	}
-	s.Snapshot.Tabs = tabs
-	var layouts []herdr.PaneLayout
-	for _, layout := range s.Snapshot.Layouts {
-		if !tabIDs[layout.TabID] {
-			layouts = append(layouts, layout)
-		}
-	}
-	s.Snapshot.Layouts = layouts
-}
-
-func (s *Server) repointWorkspaceTab(workspaceID string) {
-	if workspaceID == "" {
-		return
-	}
-	next := ""
-	for _, pane := range s.Snapshot.Panes {
-		if pane.WorkspaceID == workspaceID {
-			next = pane.TabID
-			break
-		}
-	}
-	for i, workspace := range s.Snapshot.Workspaces {
-		if workspace.WorkspaceID == workspaceID {
-			s.Snapshot.Workspaces[i].ActiveTabID = next
-			return
-		}
-	}
-}
-
-func hasPaneInTab(panes []herdr.PaneRow, tabID string) bool {
-	for _, pane := range panes {
-		if pane.TabID == tabID {
-			return true
-		}
-	}
-	return false
-}
-
-func hasPaneInWorkspace(panes []herdr.PaneRow, workspaceID string) bool {
-	for _, pane := range panes {
-		if pane.WorkspaceID == workspaceID {
-			return true
-		}
-	}
-	return false
 }
 
 func (s *Server) serve(conn net.Conn) {
@@ -385,20 +224,6 @@ func (s *Server) serve(conn net.Conn) {
 		}
 		_ = json.Unmarshal(req.Params, &params)
 		s.commands = append(s.commands, params.Text)
-		result = map[string]any{"type": "ok"}
-	case "workspace.close":
-		var params struct {
-			WorkspaceID string `json:"workspace_id"`
-		}
-		_ = json.Unmarshal(req.Params, &params)
-		s.applyWorkspaceClose(params.WorkspaceID)
-		result = map[string]any{"type": "ok"}
-	case "pane.close":
-		var params struct {
-			PaneID string `json:"pane_id"`
-		}
-		_ = json.Unmarshal(req.Params, &params)
-		s.applyPaneClose(params.PaneID)
 		result = map[string]any{"type": "ok"}
 	default:
 		result = map[string]any{"type": "ok"}
