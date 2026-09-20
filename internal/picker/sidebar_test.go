@@ -62,16 +62,21 @@ rows = [
 	if len(layout.AgentRows) != 2 || len(layout.AgentRows[1][0].Rules) != 2 {
 		t.Fatalf("rules not parsed: %+v", layout.AgentRows)
 	}
-	plain, display := renderSidebarRows(layout.AgentRows[1:], map[string]string{"agent": "PI-bot", "$load": "90"}, "idle", colorTheme{})
-	if len(plain) != 1 || plain[0] != "PI-bot · 90" {
-		t.Fatalf("plain %q", plain)
+	agent, hidden := applySidebarRules(layout.AgentRows[1][0], "PI-bot")
+	if hidden || agent.Fg != "#ff0000" || !agent.Bold {
+		t.Fatalf("contains rule: %+v hide=%v", agent, hidden)
 	}
-	if !strings.Contains(display[0], "255;0;0") || !strings.Contains(display[0], "0;255;0") {
-		t.Fatalf("rule colors missing: %q", display[0])
+	load, hidden := applySidebarRules(layout.AgentRows[1][1], "90")
+	if hidden || load.Fg != "#00ff00" {
+		t.Fatalf("gt rule: %+v hide=%v", load, hidden)
 	}
-	hidden, _ := renderSidebarRows(layout.AgentRows[1:], map[string]string{"agent": "hide-me", "$load": "90"}, "idle", colorTheme{})
-	if len(hidden) != 1 || hidden[0] != "90" {
-		t.Fatalf("hide not applied: %q", hidden)
+	_, hidden = applySidebarRules(layout.AgentRows[1][0], "hide-me")
+	if !hidden {
+		t.Fatal("hide rule did not match")
+	}
+	plain, _ := renderSidebarRows(layout.AgentRows[1:], map[string]string{"agent": "hide-me", "$load": "90"}, "idle", colorTheme{})
+	if len(plain) != 1 || plain[0] != "90" {
+		t.Fatalf("hide not applied: %q", plain)
 	}
 	gone, _ := renderSidebarRows(layout.AgentRows[1:], map[string]string{"agent": "hide-me"}, "idle", colorTheme{})
 	if len(gone) != 0 {
