@@ -32,6 +32,10 @@ func TestAgentDetailsUseHerdrDescriptionAndDirectory(t *testing.T) {
 	if len(plain) != 3 || !strings.Contains(plain[0], "\U000f03ff Implement") || plain[1] != "Project (~/…/app)" || plain[2] != "pi - Fix tests keep details" {
 		t.Fatalf("rows %+v", plain)
 	}
+	th := themeOrDefault(colorTheme{})
+	if !strings.Contains(display[0], th.Text) {
+		t.Fatalf("heading not themed: %q", display[0])
+	}
 	for _, i := range []int{1, 2} {
 		if !strings.Contains(display[i], mutedSGR) {
 			t.Fatalf("secondary row not muted: %q", display[i])
@@ -65,9 +69,6 @@ func TestWrappedDetailsKeepMutedColorAndRail(t *testing.T) {
 		found++
 		if !strings.Contains(layout.Lines[i], mutedSGR) {
 			t.Fatalf("wrapped detail lost muted style: %q", layout.Lines[i])
-		}
-		if strings.Contains(layout.Lines[i], "\x1b[48;") {
-			t.Fatalf("wrapped detail uses row background: %q", layout.Lines[i])
 		}
 	}
 	if found < 2 {

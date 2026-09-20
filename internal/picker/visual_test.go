@@ -22,15 +22,15 @@ func hasRailSelectedLabel(view, label string) bool {
 	return false
 }
 
-func TestSelectedBlockHasRailAndBoldLabelNotBackground(t *testing.T) {
-	m := model{selectedID: "a", visible: []Item{{ID: "a", DisplayRows: []string{"\x1b[31malpha\x1b[0m", "detail"}}, {ID: "b", Rows: []string{"beta"}}}}
+func TestSelectedBlockHasRailBoldLabelAndSelectionFill(t *testing.T) {
+	th := resolveTheme("catppuccin", nil)
+	m := model{selectedID: "a", theme: th, visible: []Item{{ID: "a", DisplayRows: []string{"\x1b[31malpha\x1b[0m", "detail"}}, {ID: "b", Rows: []string{"beta"}}}}
 	layout := m.buildListLayout(20, 6)
 	selected, other := 0, 0
+	sel := th.selectedFill()
+	panel := th.listFill()
 	for i, id := range layout.ItemIDs {
 		line := layout.Lines[i]
-		if strings.Contains(line, "\x1b[48;") {
-			t.Fatalf("row background used: %q", line)
-		}
 		if id == "a" {
 			selected++
 			plain := termtext.StripControls(line)
@@ -40,11 +40,16 @@ func TestSelectedBlockHasRailAndBoldLabelNotBackground(t *testing.T) {
 			if strings.Contains(plain, "alpha") && !strings.Contains(line, "\x1b[1m") {
 				t.Fatalf("selected primary label not bold: %q", line)
 			}
+			if sel != "" && !strings.Contains(line, sel) {
+				t.Fatalf("selected row missing fill: %q", line)
+			}
 			if ansi.StringWidth(line) != 20 {
 				t.Fatalf("selected row width: %q", line)
 			}
 		} else if strings.HasPrefix(termtext.StripControls(line), selectionRail) {
 			t.Fatalf("rail leaked beyond selected block: %q", line)
+		} else if id == "b" && panel != "" && !strings.Contains(line, panel) {
+			t.Fatalf("unselected row missing panel fill: %q", line)
 		}
 		if id == "b" {
 			other++

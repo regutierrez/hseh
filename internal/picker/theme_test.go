@@ -13,8 +13,11 @@ func TestNamedThemePaintsRowsAndStatus(t *testing.T) {
 		t.Fatalf("muted %q", th.Muted)
 	}
 	_, display := renderSpaceRow(spaceRow{source: SourceHerdr, name: "alpha", path: "/tmp/a"}, "dots", th)
-	if strings.Contains(display, "38;5;245") || !strings.Contains(display, th.Muted) {
+	if strings.Contains(display, "38;5;245") || !strings.Contains(display, th.Muted) || !strings.Contains(display, th.Text) {
 		t.Fatalf("row %q", display)
+	}
+	if th.PanelBg != hexSGR("#181825", false) || th.Text != hexSGR("#cdd6f4", false) {
+		t.Fatalf("palette %+v", th)
 	}
 	for status, token := range map[string]string{"blocked": th.Red, "working": th.Yellow, "done": th.Blue, "idle": th.Green, "unknown": th.Overlay} {
 		got := stylePlainToken(sidebarToken{Name: "state_icon"}, "●", status, th)
@@ -48,8 +51,11 @@ func TestAutoSwitchAndCustom(t *testing.T) {
 	}
 
 	term := resolveTheme("terminal", map[string]string{"red": "#ff0000"})
-	if term.Accent != "\x1b[34m" || term.Mauve != "\x1b[37m" || term.Red != hexSGR("#ff0000", false) || strings.Contains(term.Accent, "38;2") {
+	if term.Accent != "\x1b[34m" || term.Mauve != "\x1b[37m" || term.Red != hexSGR("#ff0000", false) || term.PanelBg != "" || term.Text != "" || strings.Contains(term.Accent, "38;2") {
 		t.Fatalf("terminal custom %+v", term)
+	}
+	if term.selectedFill() != "\x1b[100m" {
+		t.Fatalf("terminal selected fill %q", term.selectedFill())
 	}
 
 	dir := t.TempDir()
@@ -83,9 +89,33 @@ red = "#0a0b0c"
 	if appearanceFromCOLORFGBG("0;15") != appearanceLight || appearanceFromCOLORFGBG("15;0") != appearanceDark {
 		t.Fatal("COLORFGBG")
 	}
+
+	for name, tokens := range herdrThemePalettes {
+		for _, key := range herdrPaletteKeys {
+			if _, ok := tokens[key]; !ok {
+				t.Fatalf("%s missing %s", name, key)
+			}
+		}
+	}
+	if toBgSGR(hexSGR("#112233", false)) != hexSGR("#112233", true) || toBgSGR("\x1b[34m") != "\x1b[44m" || toBgSGR("") != "" {
+		t.Fatal("toBgSGR")
+	}
 	t.Setenv(appearanceEnv, "light")
 	t.Setenv("COLORFGBG", "15;0")
 	if hostAppearance() != appearanceLight {
 		t.Fatal("HSEH_APPEARANCE")
+	}
+}
+
+func TestListingUsesHerdrTokensAndLivePreviewKeepsPaneSGR(t *testing.T) {
+	th := resolveTheme("catppuccin", nil)
+	listing := colorListing("\x1b[34msub/\x1b[0m\nfile.go", th)
+	if !strings.Contains(listing, th.Blue+"sub/\x1b[0m") || !strings.Contains(listing, th.Text+"file.go\x1b[0m") || strings.Contains(listing, "\x1b[34msub") {
+		t.Fatalf("listing %q", listing)
+	}
+	m := model{theme: th, previewText: "\x1b[31magent\x1b[0m", previewPane: "w1:p1"}
+	got := m.renderPreview(12, 1)
+	if !strings.Contains(got, "\x1b[31magent") || !strings.Contains(got, th.panelFill()) {
+		t.Fatalf("live preview remapped or unfilled: %q", got)
 	}
 }

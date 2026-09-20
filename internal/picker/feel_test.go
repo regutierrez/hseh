@@ -431,11 +431,11 @@ func TestViewLinesFillWidth(t *testing.T) {
 
 func TestThemeResolution(t *testing.T) {
 	th := resolveTheme("Tokyo Night", nil)
-	if th.Name != "tokyo-night" || th.Accent != hexSGR("#7aa2f7", false) || !strings.HasPrefix(th.TabActive, "\x1b[48;2;") {
+	if th.Name != "tokyo-night" || th.Accent != hexSGR("#7aa2f7", false) || th.Text != hexSGR("#c0caf5", false) || th.PanelBg != hexSGR("#1a1b26", false) || !strings.HasPrefix(th.TabActive, "\x1b[48;2;") {
 		t.Fatalf("tokyo-night %+v", th)
 	}
 	th = resolveTheme("terminal", nil)
-	if th.Accent != "\x1b[34m" || th.Mauve != "\x1b[37m" || th.Muted != "\x1b[37m" || th.Overlay != "\x1b[97m" || th.Red != "\x1b[91m" || th.Name != "terminal" {
+	if th.Accent != "\x1b[34m" || th.Mauve != "\x1b[37m" || th.Muted != "\x1b[37m" || th.Overlay != "\x1b[97m" || th.Red != "\x1b[91m" || th.PanelBg != "" || th.Text != "" || th.Name != "terminal" {
 		t.Fatalf("terminal %+v", th)
 	}
 	th = resolveTheme("nope", map[string]string{"accent": "#123456", "mauve": "bad"})

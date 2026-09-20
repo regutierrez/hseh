@@ -7,42 +7,182 @@ import (
 	"strings"
 )
 
-// colorTheme holds SGR prefixes for picker chrome and row accents, resolved
-// from Herdr's [theme] configuration.
+// colorTheme holds SGR prefixes for every Herdr Palette token we paint.
+// Values are foreground SGR (or empty for Reset). Backgrounds are derived
+// with toBgSGR at paint time. Tokens are resolved from Herdr's [theme]
+// config on top of the built-in table copied from herdrdev/herdr
+// src/app/state.rs. There is no live palette API.
 type colorTheme struct {
-	Name      string
-	Accent    string // borders, rail, divider
-	TabActive string // full SGR prefix for the active tab label
-	Mauve     string // prompt, caret, match highlight
-	Muted     string // secondary chrome and row text (subtext0)
-	Overlay   string // counts, rules, unknown status (overlay1)
-	Yellow    string // loading / empty copy, working status
-	Red       string // errors, blocked status
-	Green     string // idle status
-	Blue      string // done status
+	Name         string
+	Accent       string
+	TabActive    string
+	Mauve        string
+	Muted        string // subtext0
+	Overlay      string // overlay1
+	Overlay0     string
+	Yellow       string
+	Red          string
+	Green        string
+	Blue         string
+	Text         string
+	Teal         string
+	Peach        string
+	PanelBg      string
+	SidebarBg    string
+	ActiveRowBg  string
+	SelectionBg  string
+	Surface0     string
+	Surface1     string
+	SurfaceDim   string
 }
 
-// herdrThemePalettes mirrors the tokens Herdr 0.9.0's built-in palettes expose
-// (herdrdev/herdr src/app/state.rs). A later Herdr palette change will drift
-// until these hex values are copied again (or Herdr exposes the live palette).
+// herdrPaletteKeys is the Palette field list from Herdr state.rs, in that order.
+var herdrPaletteKeys = []string{
+	"accent", "panel_bg", "sidebar_bg", "active_row_bg", "selection_bg",
+	"surface0", "surface1", "surface_dim", "overlay0", "overlay1",
+	"text", "subtext0", "mauve", "green", "yellow", "red", "blue", "teal", "peach",
+}
+
+// herdrThemePalettes copies Herdr's built-in Palette hex values (state.rs).
+// "reset" matches Color::Reset. A later Herdr palette change will drift
+// until these are copied again or Herdr exposes the live palette.
 var herdrThemePalettes = map[string]map[string]string{
-	"catppuccin":       {"accent": "#89b4fa", "mauve": "#cba6f7", "subtext0": "#a6adc8", "yellow": "#f9e2af", "red": "#f38ba8", "overlay1": "#7f849c", "green": "#a6e3a1", "blue": "#89b4fa"},
-	"catppuccin-latte": {"accent": "#1e66f5", "mauve": "#8839ef", "subtext0": "#6c6f85", "yellow": "#df8e1d", "red": "#d20f39", "overlay1": "#8c8fa1", "green": "#40a02b", "blue": "#1e66f5"},
-	"tokyo-night":      {"accent": "#7aa2f7", "mauve": "#bb9af7", "subtext0": "#a9b1d6", "yellow": "#e0af68", "red": "#f7768e", "overlay1": "#697196", "green": "#9ece6a", "blue": "#7aa2f7"},
-	"tokyo-night-day":  {"accent": "#2e7de9", "mauve": "#7847bd", "subtext0": "#6172b0", "yellow": "#8c6c3e", "red": "#f52a65", "overlay1": "#68709a", "green": "#587539", "blue": "#2e7de9"},
-	"dracula":          {"accent": "#bd93f9", "mauve": "#ff79c6", "subtext0": "#d2d2dc", "yellow": "#f1fa8c", "red": "#ff5555", "overlay1": "#828cb4", "green": "#50fa7b", "blue": "#8be9fd"},
-	"nord":             {"accent": "#88c0d0", "mauve": "#b48ead", "subtext0": "#d8dee9", "yellow": "#ebcb8b", "red": "#bf616a", "overlay1": "#646e82", "green": "#a3be8c", "blue": "#81a1c1"},
-	"gruvbox":          {"accent": "#d79921", "mauve": "#d3869b", "subtext0": "#d5c4a1", "yellow": "#fabd2f", "red": "#fb4934", "overlay1": "#a89984", "green": "#b8bb26", "blue": "#83a598"},
-	"gruvbox-light":    {"accent": "#076678", "mauve": "#8f3f71", "subtext0": "#504945", "yellow": "#b57614", "red": "#9d0006", "overlay1": "#7c6f64", "green": "#79740e", "blue": "#076678"},
-	"one-dark":         {"accent": "#61afef", "mauve": "#c678dd", "subtext0": "#969ca8", "yellow": "#e5c07b", "red": "#e06c75", "overlay1": "#737a87", "green": "#98c379", "blue": "#61afef"},
-	"one-light":        {"accent": "#4078f2", "mauve": "#a626a4", "subtext0": "#686b77", "yellow": "#c18401", "red": "#e45649", "overlay1": "#686b77", "green": "#50a14f", "blue": "#4078f2"},
-	"solarized":        {"accent": "#268bd2", "mauve": "#d33682", "subtext0": "#839496", "yellow": "#b58900", "red": "#dc322f", "overlay1": "#657b83", "green": "#859900", "blue": "#268bd2"},
-	"solarized-light":  {"accent": "#268bd2", "mauve": "#d33682", "subtext0": "#839496", "yellow": "#b58900", "red": "#dc322f", "overlay1": "#586e75", "green": "#859900", "blue": "#268bd2"},
-	"kanagawa":         {"accent": "#7e9cd8", "mauve": "#957fb8", "subtext0": "#c8c3aa", "yellow": "#c0a36e", "red": "#c34043", "overlay1": "#87867d", "green": "#76946a", "blue": "#7e9cd8"},
-	"kanagawa-lotus":   {"accent": "#4d699b", "mauve": "#624c83", "subtext0": "#43436c", "yellow": "#77713f", "red": "#c84053", "overlay1": "#8a8980", "green": "#6f894e", "blue": "#4d699b"},
-	"rose-pine":        {"accent": "#c4a7e7", "mauve": "#c4a7e7", "subtext0": "#c8c5dc", "yellow": "#f6c177", "red": "#eb6f92", "overlay1": "#908caa", "green": "#31748f", "blue": "#31748f"},
-	"rose-pine-dawn":   {"accent": "#907aa9", "mauve": "#907aa9", "subtext0": "#797593", "yellow": "#ea9d34", "red": "#b4637a", "overlay1": "#797593", "green": "#286983", "blue": "#286983"},
-	"vesper":           {"accent": "#ffc799", "mauve": "#ffd1a8", "subtext0": "#a0a0a0", "yellow": "#ffc799", "red": "#ff8080", "overlay1": "#7e7e7e", "green": "#99ffe4", "blue": "#b0b0b0"},
+	"catppuccin": {
+		"accent": "#89b4fa", "panel_bg": "#181825", "sidebar_bg": "reset",
+		"active_row_bg": "#1e1e2e", "selection_bg": "#313244",
+		"surface0": "#313244", "surface1": "#45475a", "surface_dim": "#1e1e2e",
+		"overlay0": "#6c7086", "overlay1": "#7f849c", "text": "#cdd6f4", "subtext0": "#a6adc8",
+		"mauve": "#cba6f7", "green": "#a6e3a1", "yellow": "#f9e2af", "red": "#f38ba8",
+		"blue": "#89b4fa", "teal": "#94e2d5", "peach": "#fab387",
+	},
+	"catppuccin-latte": {
+		"accent": "#1e66f5", "panel_bg": "#eff1f5", "sidebar_bg": "reset",
+		"active_row_bg": "#e6e9ef", "selection_bg": "#bdd0f5",
+		"surface0": "#ccd0da", "surface1": "#bcc0cc", "surface_dim": "#e6e9ef",
+		"overlay0": "#9ca0b0", "overlay1": "#8c8fa1", "text": "#4c4f69", "subtext0": "#6c6f85",
+		"mauve": "#8839ef", "green": "#40a02b", "yellow": "#df8e1d", "red": "#d20f39",
+		"blue": "#1e66f5", "teal": "#179299", "peach": "#fe640b",
+	},
+	"tokyo-night": {
+		"accent": "#7aa2f7", "panel_bg": "#1a1b26", "sidebar_bg": "reset",
+		"active_row_bg": "#232636", "selection_bg": "#2d3650",
+		"surface0": "#24283b", "surface1": "#414868", "surface_dim": "#1a1b26",
+		"overlay0": "#565f89", "overlay1": "#697196", "text": "#c0caf5", "subtext0": "#a9b1d6",
+		"mauve": "#bb9af7", "green": "#9ece6a", "yellow": "#e0af68", "red": "#f7768e",
+		"blue": "#7aa2f7", "teal": "#7dcfff", "peach": "#ff9e64",
+	},
+	"tokyo-night-day": {
+		"accent": "#2e7de9", "panel_bg": "#e1e2e7", "sidebar_bg": "reset",
+		"active_row_bg": "#d2d3da", "selection_bg": "#b6cae7",
+		"surface0": "#c4c8da", "surface1": "#a8aecb", "surface_dim": "#d2d3da",
+		"overlay0": "#8990b3", "overlay1": "#68709a", "text": "#3760bf", "subtext0": "#6172b0",
+		"mauve": "#7847bd", "green": "#587539", "yellow": "#8c6c3e", "red": "#f52a65",
+		"blue": "#2e7de9", "teal": "#118c74", "peach": "#b15c00",
+	},
+	"dracula": {
+		"accent": "#bd93f9", "panel_bg": "#282a36", "sidebar_bg": "reset",
+		"active_row_bg": "#373c52", "selection_bg": "#463f5d",
+		"surface0": "#44475a", "surface1": "#6272a4", "surface_dim": "#282a36",
+		"overlay0": "#6272a4", "overlay1": "#828cb4", "text": "#f8f8f2", "subtext0": "#d2d2dc",
+		"mauve": "#ff79c6", "green": "#50fa7b", "yellow": "#f1fa8c", "red": "#ff5555",
+		"blue": "#8be9fd", "teal": "#8be9fd", "peach": "#ffb86c",
+	},
+	"nord": {
+		"accent": "#88c0d0", "panel_bg": "#2e3440", "sidebar_bg": "reset",
+		"active_row_bg": "#434c5e", "selection_bg": "#40505d",
+		"surface0": "#3b4252", "surface1": "#434c5e", "surface_dim": "#2e3440",
+		"overlay0": "#4c566a", "overlay1": "#646e82", "text": "#eceff4", "subtext0": "#d8dee9",
+		"mauve": "#b48ead", "green": "#a3be8c", "yellow": "#ebcb8b", "red": "#bf616a",
+		"blue": "#81a1c1", "teal": "#8fbcbb", "peach": "#d08770",
+	},
+	"gruvbox": {
+		"accent": "#d79921", "panel_bg": "#282828", "sidebar_bg": "reset",
+		"active_row_bg": "#323130", "selection_bg": "#4b3f27",
+		"surface0": "#3c3836", "surface1": "#504945", "surface_dim": "#282828",
+		"overlay0": "#928374", "overlay1": "#a89984", "text": "#ebdbb2", "subtext0": "#d5c4a1",
+		"mauve": "#d3869b", "green": "#b8bb26", "yellow": "#fabd2f", "red": "#fb4934",
+		"blue": "#83a598", "teal": "#8ec07c", "peach": "#fe8019",
+	},
+	"gruvbox-light": {
+		"accent": "#076678", "panel_bg": "#fbf1c7", "sidebar_bg": "reset",
+		"active_row_bg": "#f2e5bc", "selection_bg": "#ebdbb2",
+		"surface0": "#ebdbb2", "surface1": "#d5c4a1", "surface_dim": "#f2e5bc",
+		"overlay0": "#928374", "overlay1": "#7c6f64", "text": "#3c3836", "subtext0": "#504945",
+		"mauve": "#8f3f71", "green": "#79740e", "yellow": "#b57614", "red": "#9d0006",
+		"blue": "#076678", "teal": "#427b58", "peach": "#af3a03",
+	},
+	"one-dark": {
+		"accent": "#61afef", "panel_bg": "#282c34", "sidebar_bg": "reset",
+		"active_row_bg": "#313640", "selection_bg": "#334659",
+		"surface0": "#2c313a", "surface1": "#3e4451", "surface_dim": "#282c34",
+		"overlay0": "#5c6370", "overlay1": "#737a87", "text": "#abb2bf", "subtext0": "#969ca8",
+		"mauve": "#c678dd", "green": "#98c379", "yellow": "#e5c07b", "red": "#e06c75",
+		"blue": "#61afef", "teal": "#56b6c2", "peach": "#d19a66",
+	},
+	"one-light": {
+		"accent": "#4078f2", "panel_bg": "#fafafa", "sidebar_bg": "reset",
+		"active_row_bg": "#d8dbe2", "selection_bg": "#cddbf8",
+		"surface0": "#f0f0f1", "surface1": "#e5e5e6", "surface_dim": "#f5f5f6",
+		"overlay0": "#a0a1a7", "overlay1": "#686b77", "text": "#383a42", "subtext0": "#686b77",
+		"mauve": "#a626a4", "green": "#50a14f", "yellow": "#c18401", "red": "#e45649",
+		"blue": "#4078f2", "teal": "#0184bc", "peach": "#986801",
+	},
+	"solarized": {
+		"accent": "#268bd2", "panel_bg": "#002b36", "sidebar_bg": "reset",
+		"active_row_bg": "#164b57", "selection_bg": "#083e55",
+		"surface0": "#073642", "surface1": "#586e75", "surface_dim": "#002b36",
+		"overlay0": "#586e75", "overlay1": "#657b83", "text": "#93a1a1", "subtext0": "#839496",
+		"mauve": "#d33682", "green": "#859900", "yellow": "#b58900", "red": "#dc322f",
+		"blue": "#268bd2", "teal": "#2aa198", "peach": "#cb4b16",
+	},
+	"solarized-light": {
+		"accent": "#268bd2", "panel_bg": "#fdf6e3", "sidebar_bg": "reset",
+		"active_row_bg": "#eee8d5", "selection_bg": "#c9dcdf",
+		"surface0": "#eee8d5", "surface1": "#93a1a1", "surface_dim": "#eee8d5",
+		"overlay0": "#93a1a1", "overlay1": "#586e75", "text": "#657b83", "subtext0": "#839496",
+		"mauve": "#d33682", "green": "#859900", "yellow": "#b58900", "red": "#dc322f",
+		"blue": "#268bd2", "teal": "#2aa198", "peach": "#cb4b16",
+	},
+	"kanagawa": {
+		"accent": "#7e9cd8", "panel_bg": "#1f1f28", "sidebar_bg": "reset",
+		"active_row_bg": "#363646", "selection_bg": "#32384b",
+		"surface0": "#2a2a37", "surface1": "#363646", "surface_dim": "#1f1f28",
+		"overlay0": "#727169", "overlay1": "#87867d", "text": "#dcd7ba", "subtext0": "#c8c3aa",
+		"mauve": "#957fb8", "green": "#76946a", "yellow": "#c0a36e", "red": "#c34043",
+		"blue": "#7e9cd8", "teal": "#7fb4ca", "peach": "#ffa066",
+	},
+	"kanagawa-lotus": {
+		"accent": "#4d699b", "panel_bg": "#f2ecbc", "sidebar_bg": "reset",
+		"active_row_bg": "#d5cea3", "selection_bg": "#dcd5ac",
+		"surface0": "#dcd5ac", "surface1": "#c9cbd1", "surface_dim": "#d5cea3",
+		"overlay0": "#a09cac", "overlay1": "#8a8980", "text": "#545464", "subtext0": "#43436c",
+		"mauve": "#624c83", "green": "#6f894e", "yellow": "#77713f", "red": "#c84053",
+		"blue": "#4d699b", "teal": "#4e8ca2", "peach": "#cc6d00",
+	},
+	"rose-pine": {
+		"accent": "#c4a7e7", "panel_bg": "#191724", "sidebar_bg": "reset",
+		"active_row_bg": "#26233a", "selection_bg": "#3b344b",
+		"surface0": "#1f1d2e", "surface1": "#26233a", "surface_dim": "#26233a",
+		"overlay0": "#6e6a86", "overlay1": "#908caa", "text": "#e0def4", "subtext0": "#c8c5dc",
+		"mauve": "#c4a7e7", "green": "#31748f", "yellow": "#f6c177", "red": "#eb6f92",
+		"blue": "#31748f", "teal": "#9ccfd8", "peach": "#ea9a97",
+	},
+	"rose-pine-dawn": {
+		"accent": "#907aa9", "panel_bg": "#faf4ed", "sidebar_bg": "reset",
+		"active_row_bg": "#e3d9cf", "selection_bg": "#f2e9e1",
+		"surface0": "#f2e9e1", "surface1": "#fffaf3", "surface_dim": "#f2e9e1",
+		"overlay0": "#9893a5", "overlay1": "#797593", "text": "#464261", "subtext0": "#797593",
+		"mauve": "#907aa9", "green": "#286983", "yellow": "#ea9d34", "red": "#b4637a",
+		"blue": "#286983", "teal": "#56949f", "peach": "#d7827e",
+	},
+	"vesper": {
+		"accent": "#ffc799", "panel_bg": "#1a1a1a", "sidebar_bg": "reset",
+		"active_row_bg": "#101010", "selection_bg": "#232323",
+		"surface0": "#232323", "surface1": "#282828", "surface_dim": "#101010",
+		"overlay0": "#5c5c5c", "overlay1": "#7e7e7e", "text": "#ffffff", "subtext0": "#a0a0a0",
+		"mauve": "#ffd1a8", "green": "#99ffe4", "yellow": "#ffc799", "red": "#ff8080",
+		"blue": "#b0b0b0", "teal": "#66ddcc", "peach": "#ffc799",
+	},
 }
 
 var herdrThemeAliases = map[string]string{
@@ -232,7 +372,9 @@ func baseThemeTokens(key string) map[string]string {
 	}
 	tokens := map[string]string{}
 	for token, value := range herdrThemePalettes[key] {
-		tokens[token] = hexSGR(value, false)
+		if sgr, ok := parseColorSGR(value); ok {
+			tokens[token] = sgr
+		}
 	}
 	return tokens
 }
@@ -247,44 +389,64 @@ func applyColorOverrides(tokens map[string]string, custom map[string]string) {
 
 func colorThemeFromTokens(name string, tokens map[string]string) colorTheme {
 	accent := tokens["accent"]
+	text := tokens["text"]
 	return colorTheme{
-		Name:      name,
-		Accent:    accent,
-		TabActive: tabActiveSGR(accent),
-		Mauve:     tokens["mauve"],
-		Muted:     tokens["subtext0"],
-		Overlay:   tokens["overlay1"],
-		Yellow:    tokens["yellow"],
-		Red:       tokens["red"],
-		Green:     tokens["green"],
-		Blue:      tokens["blue"],
+		Name:        name,
+		Accent:      accent,
+		TabActive:   tabActiveSGR(accent, text),
+		Mauve:       tokens["mauve"],
+		Muted:       tokens["subtext0"],
+		Overlay:     tokens["overlay1"],
+		Overlay0:    tokens["overlay0"],
+		Yellow:      tokens["yellow"],
+		Red:         tokens["red"],
+		Green:       tokens["green"],
+		Blue:        tokens["blue"],
+		Text:        text,
+		Teal:        tokens["teal"],
+		Peach:       tokens["peach"],
+		PanelBg:     tokens["panel_bg"],
+		SidebarBg:   tokens["sidebar_bg"],
+		ActiveRowBg: tokens["active_row_bg"],
+		SelectionBg: tokens["selection_bg"],
+		Surface0:    tokens["surface0"],
+		Surface1:    tokens["surface1"],
+		SurfaceDim:  tokens["surface_dim"],
 	}
 }
 
-func tabActiveSGR(accent string) string {
-	if accent == "" {
-		return "\x1b[7m"
+func tabActiveSGR(accent, text string) string {
+	bg := toBgSGR(accent)
+	if bg == "" {
+		if text == "" {
+			return "\x1b[7m"
+		}
+		return "\x1b[7m" + text
 	}
-	if rest, ok := strings.CutPrefix(accent, "\x1b[38;2;"); ok && strings.HasSuffix(rest, "m") {
-		return "\x1b[48;2;" + rest + "\x1b[30m"
-	}
-	var code int
-	if _, err := fmt.Sscanf(accent, "\x1b[%dm", &code); err == nil && code > 0 {
-		return fmt.Sprintf("\x1b[7;%dm", code)
-	}
-	return "\x1b[7m" + accent
+	return bg + text
 }
 
 func terminalTokenSGRs() map[string]string {
 	return map[string]string{
-		"accent":   "\x1b[34m",
-		"mauve":    "\x1b[37m",
-		"subtext0": "\x1b[37m",
-		"overlay1": "\x1b[97m",
-		"yellow":   "\x1b[33m",
-		"red":      "\x1b[91m",
-		"green":    "\x1b[32m",
-		"blue":     "\x1b[34m",
+		"accent":        "\x1b[34m",
+		"panel_bg":      "",
+		"sidebar_bg":    "",
+		"active_row_bg": "\x1b[90m",
+		"selection_bg":  "",
+		"surface0":      "",
+		"surface1":      "\x1b[90m",
+		"surface_dim":   "\x1b[90m",
+		"overlay0":      "\x1b[37m",
+		"overlay1":      "\x1b[97m",
+		"text":          "",
+		"subtext0":      "\x1b[37m",
+		"mauve":         "\x1b[37m",
+		"green":         "\x1b[32m",
+		"yellow":        "\x1b[33m",
+		"red":           "\x1b[91m",
+		"blue":          "\x1b[34m",
+		"teal":          "\x1b[36m",
+		"peach":         "\x1b[33m",
 	}
 }
 
@@ -414,3 +576,66 @@ func themeOrDefault(th colorTheme) colorTheme {
 func (m model) th() colorTheme {
 	return themeOrDefault(m.theme)
 }
+
+// toBgSGR turns a stored foreground SGR into the matching background SGR.
+func toBgSGR(fg string) string {
+	if fg == "" {
+		return ""
+	}
+	if rest, ok := strings.CutPrefix(fg, "\x1b[38;"); ok {
+		return "\x1b[48;" + rest
+	}
+	var code int
+	if _, err := fmt.Sscanf(fg, "\x1b[%dm", &code); err == nil {
+		switch {
+		case code >= 30 && code <= 37:
+			return fmt.Sprintf("\x1b[%dm", code+10)
+		case code >= 90 && code <= 97:
+			return fmt.Sprintf("\x1b[%dm", code+10)
+		case code == 39:
+			return "\x1b[49m"
+		}
+	}
+	return ""
+}
+
+func (th colorTheme) panelFill() string { return toBgSGR(th.PanelBg) }
+
+func (th colorTheme) listFill() string {
+	if bg := toBgSGR(th.SidebarBg); bg != "" {
+		return bg
+	}
+	return toBgSGR(th.PanelBg)
+}
+
+func (th colorTheme) selectedFill() string {
+	if bg := toBgSGR(th.SelectionBg); bg != "" {
+		return bg
+	}
+	return toBgSGR(th.ActiveRowBg)
+}
+
+func (th colorTheme) searchFill() string {
+	if bg := toBgSGR(th.Surface0); bg != "" {
+		return bg
+	}
+	return toBgSGR(th.PanelBg)
+}
+
+func replayAfterReset(line, sgr string) string {
+	if sgr == "" {
+		return line
+	}
+	line = strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+sgr)
+	return strings.ReplaceAll(line, "\x1b[m", "\x1b[m"+sgr)
+}
+
+// applySurface pads a row and paints a Herdr background token through resets.
+func applySurface(line, bg string, width int) string {
+	line = padDisplayWidth(line, width)
+	if bg == "" {
+		return line
+	}
+	return bg + replayAfterReset(line, bg) + "\x1b[0m"
+}
+

@@ -195,7 +195,7 @@ func renderSpaceRow(row spaceRow, statusIndicators string, th colorTheme) (plain
 	badge := sourceBadge(row.source)
 	badge += strings.Repeat(" ", max(0, badgeColumnWidth-len([]rune(badge))))
 	plain = prefix + badge + row.name
-	display = styledPrefix + muted + badge + "\x1b[0m" + "\x1b[1m" + row.name + "\x1b[0m"
+	display = styledPrefix + muted + badge + "\x1b[0m" + th.Text + "\x1b[1m" + row.name + "\x1b[0m"
 	if row.tag != "" {
 		plain += " (" + row.tag + ")"
 		display += " " + muted + "(" + row.tag + ")" + "\x1b[0m"
@@ -232,15 +232,17 @@ func (item Item) withoutPathColumn() Item {
 }
 
 func stripDisplayPath(display, path string) string {
-	suffix := path + "\x1b[0m"
-	if !strings.HasSuffix(display, suffix) {
-		return strings.TrimSuffix(display, pathSeparator+mutedSGR+path+"\x1b[0m")
+	if path == "" {
+		return display
 	}
-	base := strings.TrimSuffix(display, suffix)
-	if i := strings.LastIndex(base, pathSeparator); i >= 0 {
-		return base[:i]
+	i := strings.LastIndex(display, path)
+	if i < 0 {
+		return display
 	}
-	return base
+	if j := strings.LastIndex(display[:i], pathSeparator); j >= 0 {
+		return display[:j]
+	}
+	return display[:i]
 }
 
 func renderAgentSidebarRows(snapshot herdr.SessionSnapshot, agent herdr.AgentRow, layout sidebarLayout, th colorTheme) (plain, display []string) {
@@ -285,7 +287,7 @@ func renderAgentSidebarRows(snapshot herdr.SessionSnapshot, agent herdr.AgentRow
 		location += " (" + space.SanitizeDisplayText(dir) + ")"
 	}
 	plain = []string{prefix + heading, location}
-	display = []string{styledPrefix + heading, muted + location + "\x1b[0m"}
+	display = []string{styledPrefix + th.Text + heading + "\x1b[0m", muted + location + "\x1b[0m"}
 	if description := strings.Join(details, " "); description != "" {
 		plain = append(plain, description)
 		display = append(display, muted+description+"\x1b[0m")

@@ -148,7 +148,7 @@ func (m model) renderTabs() string {
 		}
 		tabs = append(tabs, label)
 	}
-	return padDisplayWidth(strings.Join(tabs, " "), m.width) + "\x1b[0m"
+	return applySurface(strings.Join(tabs, " "), th.panelFill(), m.width)
 }
 
 // searchBoxLines draws the rounded Search box, prompt, caret, and matched/total count.
@@ -172,28 +172,29 @@ func (m model) searchBoxLines(width, height int) []string {
 	if drawBox {
 		inputInner = width - 2 - 2*sidePad
 	}
+	fill := th.searchFill()
 	input := m.searchInputLine(inputInner)
 	if drawBox {
 		pad := strings.Repeat(" ", sidePad)
-		input = padDisplayWidth(boxColor+"│\x1b[0m"+pad+input+pad+boxColor+"│\x1b[0m", width)
+		input = boxColor + "│\x1b[0m" + pad + input + pad + boxColor + "│\x1b[0m"
 	}
 	lines := make([]string, height)
 	for i := range lines {
-		lines[i] = padDisplayWidth("", width)
+		lines[i] = applySurface("", fill, width)
 	}
 	inputIndex := height - 1
 	if drawBox && height >= 3 {
 		inputIndex = height - 2
 	}
-	lines[inputIndex] = padDisplayWidth(input, width)
+	lines[inputIndex] = applySurface(input, fill, width)
 	if drawBox {
 		title := ""
 		if ansi.StringWidth(searchTitle) <= borderInner {
 			title = searchTitle
 		}
-		lines[0] = searchHorizontalBorder(boxColor, "╭", "╮", borderInner, title, width)
+		lines[0] = applySurface(searchHorizontalBorder(boxColor, "╭", "╮", borderInner, title, width), fill, width)
 		if height >= 3 {
-			lines[height-1] = searchHorizontalBorder(boxColor, "╰", "╯", borderInner, "", width)
+			lines[height-1] = applySurface(searchHorizontalBorder(boxColor, "╰", "╯", borderInner, "", width), fill, width)
 		}
 	}
 	return lines
@@ -257,7 +258,13 @@ func (m model) searchInputLine(width int) string {
 		b.WriteString(searchPrompt)
 		b.WriteString("\x1b[0m ")
 	}
-	b.WriteString(visibleText)
+	if th.Text != "" && visibleText != "" {
+		b.WriteString(th.Text)
+		b.WriteString(visibleText)
+		b.WriteString("\x1b[0m")
+	} else {
+		b.WriteString(visibleText)
+	}
 	if wantCaret {
 		b.WriteString(th.Mauve + searchCaret + "\x1b[0m")
 	}
@@ -308,9 +315,9 @@ func (m model) renderFooter(width int) string {
 		errW := ansi.StringWidth(errText)
 		if errW+2+helpW <= width {
 			gap := width - errW - helpW
-			return padDisplayWidth(th.Red+errText+"\x1b[0m"+strings.Repeat(" ", gap)+helpColor+help+"\x1b[0m", width)
+			return applySurface(th.Red+errText+"\x1b[0m"+strings.Repeat(" ", gap)+helpColor+help+"\x1b[0m", th.panelFill(), width)
 		}
-		return padDisplayWidth(th.Red+ansi.Truncate(errText, width, "…")+"\x1b[0m", width)
+		return applySurface(th.Red+ansi.Truncate(errText, width, "…")+"\x1b[0m", th.panelFill(), width)
 	}
 	status := ""
 	switch {
@@ -322,9 +329,9 @@ func (m model) renderFooter(width int) string {
 	statusW := ansi.StringWidth(status)
 	if status != "" && statusW+2+helpW <= width {
 		gap := width - statusW - helpW
-		return padDisplayWidth(th.Muted+status+"\x1b[0m"+strings.Repeat(" ", gap)+helpColor+help+"\x1b[0m", width)
+		return applySurface(th.Muted+status+"\x1b[0m"+strings.Repeat(" ", gap)+helpColor+help+"\x1b[0m", th.panelFill(), width)
 	}
-	return padDisplayWidth(helpColor+ansi.Truncate(help, width, "…")+"\x1b[0m", width)
+	return applySurface(helpColor+ansi.Truncate(help, width, "…")+"\x1b[0m", th.panelFill(), width)
 }
 
 func (m model) View() string {
@@ -369,7 +376,7 @@ func (m model) renderView() (out string) {
 			if i < len(prevLines) {
 				right = prevLines[i]
 			}
-			lines = append(lines, padDisplayWidth(left, f.listW)+th.Overlay+"│\x1b[0m"+padDisplayWidth(right, f.previewW))
+			lines = append(lines, left+th.Overlay+"│\x1b[0m"+right)
 		}
 	default:
 		if f.listH > 0 {
@@ -379,7 +386,7 @@ func (m model) renderView() (out string) {
 			lines = append(lines, m.searchBoxLines(f.searchW, f.searchH)...)
 		}
 		if f.mode == previewStacked {
-			lines = append(lines, padDisplayWidth(th.Overlay+strings.Repeat("─", f.previewW)+"\x1b[0m", f.previewW))
+			lines = append(lines, applySurface(th.Overlay+strings.Repeat("─", f.previewW)+"\x1b[0m", th.panelFill(), f.previewW))
 			lines = append(lines, strings.Split(m.renderPreview(f.previewW, f.previewH), "\n")...)
 		}
 	}
@@ -530,9 +537,10 @@ func (m model) buildListLayout(width, height int) listLayout {
 	if n == 0 {
 		lines := make([]string, height)
 		ids := make([]string, height)
-		lines[height-1] = padDisplayWidth(strings.Repeat(" ", railWidth)+m.emptyListCopy(), width) + "\x1b[0m"
+		fill := th.listFill()
+		lines[height-1] = applySurface(strings.Repeat(" ", railWidth)+m.emptyListCopy(), fill, width)
 		for i := 0; i < height-1; i++ {
-			lines[i] = padDisplayWidth("", width) + "\x1b[0m"
+			lines[i] = applySurface("", fill, width)
 		}
 		return listLayout{Lines: lines, ItemIDs: ids}
 	}
@@ -583,11 +591,16 @@ func (m model) buildListLayout(width, height int) listLayout {
 	ids = ids[:height]
 	rail := th.Accent + selectionRail + "\x1b[0m "
 	blank := strings.Repeat(" ", railWidth)
+	listFill := th.listFill()
+	selFill := th.selectedFill()
+	if selFill == "" {
+		selFill = listFill
+	}
 	for i, line := range lines {
 		if ids[i] != "" && ids[i] == m.selectedID {
-			lines[i] = padDisplayWidth(rail+line, width) + "\x1b[0m"
+			lines[i] = applySurface(rail+line, selFill, width)
 		} else {
-			lines[i] = padDisplayWidth(blank+line, width) + "\x1b[0m"
+			lines[i] = applySurface(blank+line, listFill, width)
 		}
 	}
 	return listLayout{Lines: lines, ItemIDs: ids}
@@ -611,21 +624,62 @@ func (m model) itemIDAtMouse(x, y int) string {
 
 func (m model) renderPreview(width, height int) string {
 	th := m.th()
+	fill := th.panelFill()
+	var body string
 	switch {
 	case m.previewLoading:
-		return clipBlock(th.Yellow+copyLoadingPreview+"\x1b[0m", width, height)
+		body = clipBlock(th.Yellow+copyLoadingPreview+"\x1b[0m", width, height)
 	case m.previewErr != "":
-		return clipBlock(th.Red+copyPreviewFailed+"\x1b[0m\n"+th.Muted+m.previewErr+"\x1b[0m", width, height)
+		body = clipBlock(th.Red+copyPreviewFailed+"\x1b[0m\n"+th.Muted+m.previewErr+"\x1b[0m", width, height)
 	case m.previewText == "":
 		if !m.snapshotReady {
-			return clipBlock(th.Yellow+copyLoading+"\x1b[0m", width, height)
+			body = clipBlock(th.Yellow+copyLoading+"\x1b[0m", width, height)
+		} else {
+			body = clipBlock(th.Muted+copyNoPreview+"\x1b[0m", width, height)
 		}
-		return clipBlock(th.Muted+copyNoPreview+"\x1b[0m", width, height)
 	case m.previewListing:
-		return clipListing(m.previewText, width, height)
+		body = clipListing(colorListing(m.previewText, th), width, height)
 	default:
-		return clipLivePreview(m.previewText, width, height)
+		body = clipLivePreview(m.previewText, width, height)
 	}
+	return applySurfaceBlock(body, fill, width, height)
+}
+
+func applySurfaceBlock(text, bg string, width, height int) string {
+	lines := strings.Split(text, "\n")
+	if text == "" {
+		lines = nil
+	}
+	lines = padToHeight(lines, height)
+	for i, line := range lines {
+		lines[i] = applySurface(line, bg, width)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// colorListing strips eza/builtin SGR and paints names with Herdr tokens.
+// Directory rows (trailing / from builtin or eza -F) use blue; everything else uses text.
+func colorListing(text string, th colorTheme) string {
+	th = themeOrDefault(th)
+	if text == "" {
+		return text
+	}
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		plain := termtext.StripControls(line)
+		color := th.Text
+		if strings.HasSuffix(strings.TrimRight(plain, " "), "/") {
+			if th.Blue != "" {
+				color = th.Blue
+			}
+		}
+		if color == "" {
+			lines[i] = plain
+			continue
+		}
+		lines[i] = color + plain + "\x1b[0m"
+	}
+	return strings.Join(lines, "\n")
 }
 
 // clipLivePreview preserves terminal rows and shows their bottom edge, rather than reflowing a terminal grid.

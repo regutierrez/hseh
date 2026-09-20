@@ -22,9 +22,9 @@ const ezaTimeout = 2 * time.Second
 // maxLines caps listing output so a huge directory cannot flood the preview.
 const maxLines = 500
 
-// ezaArgs are fixed: the preview shows what eza shows, not a user command. No long format:
-// one name per line keeps filenames visible in a narrow preview column.
-var ezaArgs = []string{"--icons=always", "--color=always", "--group-directories-first", "-a"}
+// ezaArgs are fixed: icons and names only. Color comes from Herdr tokens in
+// the picker, not eza's own theme. -F marks directories so we can paint them.
+var ezaArgs = []string{"--icons=always", "--color=never", "--group-directories-first", "-a", "-F"}
 
 const copyEmptyDirectory = "(empty directory)"
 
