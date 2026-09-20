@@ -10,11 +10,11 @@ import (
 )
 
 func TestHerdrDotGlyphsAndColors(t *testing.T) {
-	for _, c := range []struct{ status, glyph, color string }{{"blocked", "●", "91"}, {"working", "●", "33"}, {"done", "●", "36"}, {"idle", "○", "32"}, {"unknown", "·", "90"}} {
+	for _, c := range []struct{ status, glyph, color string }{{"blocked", "●", "91"}, {"working", "●", "33"}, {"done", "●", "34"}, {"idle", "○", "32"}, {"unknown", "·", "97"}} {
 		if got := stateIconGlyph(c.status, "dots"); got != c.glyph {
 			t.Errorf("%s glyph %s want %s", c.status, got, c.glyph)
 		}
-		got := stylePlainToken(sidebarToken{Name: "state_icon"}, c.glyph, c.status)
+		got := stylePlainToken(sidebarToken{Name: "state_icon"}, c.glyph, c.status, terminalTheme())
 		if !strings.Contains(got, "\x1b["+c.color+"m") {
 			t.Errorf("%s lost terminal palette color: %q", c.status, got)
 		}
@@ -28,7 +28,7 @@ func TestAgentDetailsUseHerdrDescriptionAndDirectory(t *testing.T) {
 	agent := herdr.AgentRow{PaneRow: herdr.PaneRow{WorkspaceID: "w1", TabID: "w1:t1", PaneID: "w1:p1", Agent: "pi", AgentStatus: "working", Cwd: filepath.Join(home, "code", "nested", "app"), DisplayAgent: "pi - Fix tests", Tokens: map[string]string{"name2": "keep details"}}}
 	layout := defaultSidebarLayout()
 	layout.AgentRows = tokensFromNames([][]string{{"state_icon", "workspace", "tab"}, {"agent"}, {"$name2"}})
-	plain, display := renderAgentSidebarRows(snapshot, agent, layout)
+	plain, display := renderAgentSidebarRows(snapshot, agent, layout, colorTheme{})
 	if len(plain) != 3 || !strings.Contains(plain[0], "\U000f03ff Implement") || plain[1] != "Project (~/…/app)" || plain[2] != "pi - Fix tests keep details" {
 		t.Fatalf("rows %+v", plain)
 	}

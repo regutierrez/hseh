@@ -2,7 +2,10 @@ package picker
 
 import (
 	"fmt"
+	"math"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/BurntSushi/toml"
 	"github.com/charmbracelet/lipgloss"
@@ -16,6 +19,19 @@ type sidebarToken struct {
 	Bold   bool
 	Dim    bool
 	Styled bool
+	Rules  []sidebarRule
+}
+
+// sidebarRule is one Herdr text-token rule (equals/contains/starts_with/gt/lt).
+type sidebarRule struct {
+	kind       string
+	text       string
+	number     float64
+	ignoreCase bool
+	fg         string
+	bold       *bool
+	dim        *bool
+	hide       *bool
 }
 
 // sidebarLayout is the parsed Herdr sidebar configuration used by the picker. Spaces rows
@@ -123,6 +139,9 @@ func parseSidebarTokenRows(raw [][]any) [][]sidebarToken {
 				if dim, ok := value["dim"].(bool); ok {
 					cell.Dim = dim
 				}
+				if rawRules, ok := value["rules"].([]any); ok {
+					cell.Rules = parseSidebarRules(rawRules)
+				}
 				cells = append(cells, cell)
 			}
 		}
@@ -159,30 +178,225 @@ func stateIconGlyph(status, mode string) string {
 	}
 }
 
-func stateIconColor(status string) string {
+func stateIconSGR(status string, th colorTheme) string {
+	th = themeOrDefault(th)
 	switch status {
 	case "blocked":
-		return "91"
+		return th.Red
 	case "working":
-		return "33"
+		return th.Yellow
 	case "done":
-		return "36"
+		return th.Blue
 	case "idle":
-		return "32"
+		return th.Green
 	default:
-		return "90"
+		return th.Overlay
 	}
 }
 
-func stylePlainToken(token sidebarToken, plain, status string) string {
+func parseSidebarRules(raw []any) []sidebarRule {
+	var rules []sidebarRule
+	for _, item := range raw {
+		entry, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		if rule, ok := parseSidebarRule(entry); ok {
+			rules = append(rules, rule)
+		}
+	}
+	return rules
+}
+
+func parseSidebarRule(raw map[string]any) (sidebarRule, bool) {
+	var rule sidebarRule
+	conditions := 0
+	if value, ok := raw["equals"].(string); ok {
+		rule.kind, rule.text, conditions = "equals", value, conditions+1
+	}
+	if value, ok := raw["contains"].(string); ok {
+		rule.kind, rule.text, conditions = "contains", value, conditions+1
+	}
+	if value, ok := raw["starts_with"].(string); ok {
+		rule.kind, rule.text, conditions = "starts_with", value, conditions+1
+	}
+	if value, ok := floatFromTOML(raw["gt"]); ok {
+		rule.kind, rule.number, conditions = "gt", value, conditions+1
+	}
+	if value, ok := floatFromTOML(raw["lt"]); ok {
+		rule.kind, rule.number, conditions = "lt", value, conditions+1
+	}
+	if conditions != 1 {
+		return sidebarRule{}, false
+	}
+	if ignore, ok := raw["ignore_case"].(bool); ok {
+		if rule.kind == "gt" || rule.kind == "lt" {
+			return sidebarRule{}, false
+		}
+		rule.ignoreCase = ignore
+	}
+	if fg, ok := raw["fg"].(string); ok {
+		rule.fg = fg
+	}
+	if bold, ok := raw["bold"].(bool); ok {
+		rule.bold = &bold
+	}
+	if dim, ok := raw["dim"].(bool); ok {
+		rule.dim = &dim
+	}
+	if hide, ok := raw["hide"].(bool); ok {
+		rule.hide = &hide
+	}
+	return rule, true
+}
+
+func floatFromTOML(value any) (float64, bool) {
+	switch n := value.(type) {
+	case float64:
+		if math.IsNaN(n) || math.IsInf(n, 0) {
+			return 0, false
+		}
+		return n, true
+	case int64:
+		return float64(n), true
+	case uint64:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	default:
+		return 0, false
+	}
+}
+
+func (r sidebarRule) matches(value string, numeric *optionalFloat) bool {
+	switch r.kind {
+	case "equals":
+		if r.ignoreCase {
+			return asciiEqualFold(value, r.text)
+		}
+		return value == r.text
+	case "contains":
+		if r.ignoreCase {
+			return asciiContainsFold(value, r.text)
+		}
+		return strings.Contains(value, r.text)
+	case "starts_with":
+		if r.ignoreCase {
+			return asciiHasPrefixFold(value, r.text)
+		}
+		return strings.HasPrefix(value, r.text)
+	case "gt", "lt":
+		n, ok := numeric.parse(value)
+		if !ok {
+			return false
+		}
+		if r.kind == "gt" {
+			return n > r.number
+		}
+		return n < r.number
+	default:
+		return false
+	}
+}
+
+type optionalFloat struct {
+	parsed bool
+	ok     bool
+	value  float64
+}
+
+func (o *optionalFloat) parse(value string) (float64, bool) {
+	if o.parsed {
+		return o.value, o.ok
+	}
+	o.parsed = true
+	n, err := strconv.ParseFloat(value, 64)
+	if err != nil || math.IsNaN(n) || math.IsInf(n, 0) {
+		return 0, false
+	}
+	o.ok = true
+	o.value = n
+	return n, true
+}
+
+func asciiEqualFold(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i++ {
+		if asciiLower(a[i]) != asciiLower(b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func asciiHasPrefixFold(value, prefix string) bool {
+	if len(prefix) > len(value) {
+		return false
+	}
+	return asciiEqualFold(value[:len(prefix)], prefix)
+}
+
+func asciiContainsFold(value, part string) bool {
+	if part == "" {
+		return true
+	}
+	if len(part) > len(value) {
+		return false
+	}
+	for i := 0; i+len(part) <= len(value); i++ {
+		if asciiEqualFold(value[i:i+len(part)], part) {
+			return true
+		}
+	}
+	return false
+}
+
+func asciiLower(b byte) byte {
+	if b >= 'A' && b <= 'Z' {
+		return b + ('a' - 'A')
+	}
+	return b
+}
+
+func applySidebarRules(token sidebarToken, value string) (sidebarToken, bool) {
+	if token.Name == "state_icon" || token.Name == "git_status" || len(token.Rules) == 0 {
+		return token, false
+	}
+	var numeric optionalFloat
+	for _, rule := range token.Rules {
+		if !rule.matches(value, &numeric) {
+			continue
+		}
+		if rule.hide != nil && *rule.hide {
+			return token, true
+		}
+		if rule.fg != "" {
+			token.Fg = rule.fg
+			token.Styled = true
+		}
+		if rule.bold != nil {
+			token.Bold = *rule.bold
+			token.Styled = true
+		}
+		if rule.dim != nil {
+			token.Dim = *rule.dim
+			token.Styled = true
+		}
+		return token, false
+	}
+	return token, false
+}
+
+func stylePlainToken(token sidebarToken, plain, status string, th colorTheme) string {
 	if plain == "" {
 		return ""
 	}
 	style := lipgloss.NewStyle()
 	colored := false
 	if token.Name == "state_icon" && token.Fg == "" {
-		// Herdr's terminal theme uses the terminal palette, not CSS color names.
-		plain = "\x1b[" + stateIconColor(status) + "m" + plain + "\x1b[0m"
+		plain = stateIconSGR(status, th) + plain + "\x1b[0m"
 	}
 	if token.Styled && token.Fg != "" {
 		style = style.Foreground(lipgloss.Color(token.Fg))

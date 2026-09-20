@@ -30,7 +30,7 @@ func spaceSnapshot(cwd string) herdr.SessionSnapshot {
 func TestSpaceRowIsOneLineWithBadgeGitAndCheckoutRoot(t *testing.T) {
 	cwd := "/home/u/hseh/internal/picker"
 	git := map[string]gitinfo.WorkspaceGit{cwd: {Branch: "main", Status: "~2", Root: "/home/u/hseh"}}
-	items := buildSpaceItems(spaceSnapshot(cwd), focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), git)
+	items := buildSpaceItems(spaceSnapshot(cwd), focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), git, colorTheme{})
 	item := items[0]
 	if item.Source != SourceHerdr || item.Path != "/home/u/hseh" {
 		t.Fatalf("source/path: %+v", item)
@@ -38,7 +38,7 @@ func TestSpaceRowIsOneLineWithBadgeGitAndCheckoutRoot(t *testing.T) {
 	if item.PaneID != "" {
 		t.Fatalf("space rows preview a directory, not a pane: %q", item.PaneID)
 	}
-	prefix, _ := statePrefix("idle", "dots")
+	prefix, _ := statePrefix("idle", "dots", colorTheme{})
 	want := prefix + herdrSourceIcon + " herdr    hseh  " + gitBranchIcon + " main ~2  /home/u/hseh"
 	if len(item.Rows) != 1 || item.Rows[0] != want {
 		t.Fatalf("rows %q want %q", item.Rows, want)
@@ -47,7 +47,7 @@ func TestSpaceRowIsOneLineWithBadgeGitAndCheckoutRoot(t *testing.T) {
 		t.Fatalf("display diverges from plain: %q", item.DisplayRows[0])
 	}
 	// Without git the active pane's directory is the path and no git detail is shown.
-	plain := buildSpaceItems(spaceSnapshot(cwd), focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil)[0]
+	plain := buildSpaceItems(spaceSnapshot(cwd), focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil, colorTheme{})[0]
 	if plain.Path != cwd || !strings.HasSuffix(plain.Rows[0], "hseh  "+cwd) {
 		t.Fatalf("no-git row %q path %q", plain.Rows, plain.Path)
 	}
@@ -55,7 +55,7 @@ func TestSpaceRowIsOneLineWithBadgeGitAndCheckoutRoot(t *testing.T) {
 
 func TestTemplateRowIsOneLineAndKeepsDescriptionForSearchOnly(t *testing.T) {
 	def := space.Definition{ID: "def-app", Name: "app", Description: "dev setup", ResolvedDir: "/srv/app", SourceFile: "/cfg/app.toml"}
-	item := definitionItem(def, false, gitinfo.WorkspaceGit{Branch: "dev", Root: "/srv/app"})
+	item := definitionItem(def, false, gitinfo.WorkspaceGit{Branch: "dev", Root: "/srv/app"}, colorTheme{})
 	if item.Source != SourceTemplate || item.Path != "/srv/app" || len(item.Rows) != 1 {
 		t.Fatalf("%+v", item)
 	}
@@ -72,8 +72,8 @@ func TestTemplateRowIsOneLineAndKeepsDescriptionForSearchOnly(t *testing.T) {
 }
 
 func TestBadgeColumnAlignsNamesAcrossSources(t *testing.T) {
-	live := buildSpaceItems(spaceSnapshot("/x"), focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil)[0]
-	template := definitionItem(space.Definition{ID: "d", Name: "app", ResolvedDir: "/srv/app"}, false, gitinfo.WorkspaceGit{})
+	live := buildSpaceItems(spaceSnapshot("/x"), focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil, colorTheme{})[0]
+	template := definitionItem(space.Definition{ID: "d", Name: "app", ResolvedDir: "/srv/app"}, false, gitinfo.WorkspaceGit{}, colorTheme{})
 	nameColumn := func(row, name string) int {
 		return utf8.RuneCountInString(row[:strings.Index(row, name)])
 	}
@@ -83,7 +83,7 @@ func TestBadgeColumnAlignsNamesAcrossSources(t *testing.T) {
 }
 
 func TestPathColumnHidesBelowMinimumListWidth(t *testing.T) {
-	item := definitionItem(space.Definition{ID: "d", Name: "app", ResolvedDir: "/srv/app"}, false, gitinfo.WorkspaceGit{})
+	item := definitionItem(space.Definition{ID: "d", Name: "app", ResolvedDir: "/srv/app"}, false, gitinfo.WorkspaceGit{}, colorTheme{})
 	m := model{}
 	wide := termtext.StripControls(strings.Join(m.wrapItemBlock(item, false, pathColumnMinWidth), ""))
 	narrow := termtext.StripControls(strings.Join(m.wrapItemBlock(item, false, pathColumnMinWidth-1), ""))
@@ -105,7 +105,7 @@ func TestPathColumnHidesBelowMinimumListWidth(t *testing.T) {
 }
 
 func TestLongSpaceRowIsTruncatedNotWrapped(t *testing.T) {
-	item := definitionItem(space.Definition{ID: "d", Name: "app", ResolvedDir: "/very/long/" + strings.Repeat("segment/", 12) + "app"}, false, gitinfo.WorkspaceGit{})
+	item := definitionItem(space.Definition{ID: "d", Name: "app", ResolvedDir: "/very/long/" + strings.Repeat("segment/", 12) + "app"}, false, gitinfo.WorkspaceGit{}, colorTheme{})
 	m := model{}
 	lines := m.wrapItemBlock(item, true, pathColumnMinWidth)
 	if len(lines) != 1 {
@@ -117,7 +117,7 @@ func TestLongSpaceRowIsTruncatedNotWrapped(t *testing.T) {
 }
 
 func TestListJSONCarriesSourcePathAndRecovery(t *testing.T) {
-	item := definitionItem(space.Definition{ID: "def-x", Name: "x", ResolvedDir: "/srv/x"}, true, gitinfo.WorkspaceGit{})
+	item := definitionItem(space.Definition{ID: "def-x", Name: "x", ResolvedDir: "/srv/x"}, true, gitinfo.WorkspaceGit{}, colorTheme{})
 	payload, err := EncodeListJSON(ListDocument{View: ViewSpaces, Items: []Item{item}})
 	if err != nil {
 		t.Fatal(err)

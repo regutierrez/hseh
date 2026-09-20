@@ -29,7 +29,7 @@ func TestCatalogOmitsCurrentTargets(t *testing.T) {
 	if hasItemID(spaces.visible, selectionID(KindSpace, "w1")) {
 		t.Fatal("current space listed")
 	}
-	listed := assembleItems(ViewSpaces, liveState{snapshot: spaces.snapshot, history: spaces.history}, defaultSidebarLayout(), nil, nil)
+	listed := assembleItems(ViewSpaces, liveState{snapshot: spaces.snapshot, history: spaces.history}, defaultSidebarLayout(), nil, nil, colorTheme{})
 	if !hasItemID(listed, selectionID(KindSpace, "w1")) {
 		t.Fatal("list JSON dropped current space")
 	}

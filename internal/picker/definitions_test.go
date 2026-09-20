@@ -17,12 +17,12 @@ func TestUnopenedDefinitionListedUntilAssociated(t *testing.T) {
 	work := t.TempDir()
 	def := space.Definition{ID: "def-list", Name: "listed", ResolvedDir: work, WorkingDir: work, Description: "desc"}
 	snapshot := herdr.SessionSnapshot{Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w1", Label: "live"}}}
-	items := appendUnopenedDefinitionItems(buildItemsWithLayout("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil), "spaces", snapshot, []space.Definition{def}, nil, nil, nil)
+	items := appendUnopenedDefinitionItems(buildItemsWithLayout("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil, colorTheme{}), "spaces", snapshot, []space.Definition{def}, nil, nil, nil, colorTheme{})
 	if len(items) != 2 || items[1].Kind != KindDefinition {
 		t.Fatalf("%+v", items)
 	}
 	records := []space.AssociationRecord{{DefinitionID: "def-list", ResolvedDir: work, WorkspaceID: "w1"}}
-	hidden := appendUnopenedDefinitionItems(buildItemsWithLayout("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil), "spaces", snapshot, []space.Definition{def}, records, nil, nil)
+	hidden := appendUnopenedDefinitionItems(buildItemsWithLayout("spaces", snapshot, focus.EmptyHistory(herdr.ContinuityWitness{}), defaultSidebarLayout(), nil, colorTheme{}), "spaces", snapshot, []space.Definition{def}, records, nil, nil, colorTheme{})
 	if len(hidden) != 1 {
 		t.Fatalf("associated definition still listed: %+v", hidden)
 	}
@@ -36,7 +36,7 @@ func TestDefinitionPickerSanitizesDisplayNotCommand(t *testing.T) {
 		ID: "w1", Name: "n\x1b[31mX", Description: "d\x1b]0;title\x07",
 		ResolvedDir: "/tmp/x", Tabs: []space.DefinitionTab{{Name: "t", Command: "echo \x1b[31mKEEP"}},
 	}
-	item := definitionItem(def, false, gitinfo.WorkspaceGit{})
+	item := definitionItem(def, false, gitinfo.WorkspaceGit{}, colorTheme{})
 	if strings.Contains(item.Rows[0], "\x1b") || strings.Contains(item.PreviewText, "\x1b") {
 		t.Fatalf("display still has controls: %+v %q", item.Rows, item.PreviewText)
 	}
@@ -96,7 +96,7 @@ func TestPickerEscapeCancelsDefinitionAccept(t *testing.T) {
 
 func TestDefinitionPickerShowsRecoveryCommands(t *testing.T) {
 	def := space.Definition{ID: "def-rec", Name: "rec", ResolvedDir: "/tmp/x"}
-	item := definitionItem(def, true, gitinfo.WorkspaceGit{})
+	item := definitionItem(def, true, gitinfo.WorkspaceGit{}, colorTheme{})
 	if len(item.Rows) != 1 || !strings.Contains(item.Rows[0], "(recovery needed)") {
 		t.Fatalf("rows %v", item.Rows)
 	}

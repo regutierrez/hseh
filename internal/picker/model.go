@@ -222,7 +222,7 @@ func (m *model) rebuildVisible() {
 
 func (m *model) catalogItems() []Item {
 	live := liveState{snapshot: m.snapshot, history: m.history, records: m.associationRecords, unresolved: m.unresolvedRecords}
-	return omitLaunchTargets(assembleItems(m.view, live, m.layout, m.definitions, m.gitByDirectory), m.launch)
+	return omitLaunchTargets(assembleItems(m.view, live, m.layout, m.definitions, m.gitByDirectory, m.th()), m.launch)
 }
 
 // previewTarget names what the item previews: a live agent pane, or the directory of a space/template.

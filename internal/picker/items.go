@@ -67,14 +67,14 @@ type ListSession struct {
 // buildItemsWithLayout builds Spaces or Agents rows from the live snapshot plus history,
 // using the parsed sidebar layout for status glyphs and per-agent description rows.
 // git is keyed by active directory and only decorates Spaces rows.
-func buildItemsWithLayout(view string, snapshot herdr.SessionSnapshot, history focus.History, layout sidebarLayout, git map[string]gitinfo.WorkspaceGit) []Item {
+func buildItemsWithLayout(view string, snapshot herdr.SessionSnapshot, history focus.History, layout sidebarLayout, git map[string]gitinfo.WorkspaceGit, th colorTheme) []Item {
 	if view == ViewAgents {
-		return buildAgentItems(snapshot, history, layout)
+		return buildAgentItems(snapshot, history, layout, th)
 	}
-	return buildSpaceItems(snapshot, history, layout, git)
+	return buildSpaceItems(snapshot, history, layout, git, th)
 }
 
-func buildSpaceItems(snapshot herdr.SessionSnapshot, history focus.History, layout sidebarLayout, gitByDir map[string]gitinfo.WorkspaceGit) []Item {
+func buildSpaceItems(snapshot herdr.SessionSnapshot, history focus.History, layout sidebarLayout, gitByDir map[string]gitinfo.WorkspaceGit, th colorTheme) []Item {
 	indexOf := map[string]int{}
 	for i, id := range history.Spaces {
 		indexOf[id] = i
@@ -101,7 +101,7 @@ func buildSpaceItems(snapshot herdr.SessionSnapshot, history focus.History, layo
 		// The checkout root is stable while the user moves around inside a repository.
 		path := firstNonEmpty(git.Root, dir)
 		name := space.SanitizeDisplayText(firstNonEmpty(workspace.Label, workspace.WorkspaceID))
-		plain, display := renderSpaceRow(spaceRow{status: workspace.AgentStatus, source: SourceHerdr, name: name, git: git, path: path}, layout.StatusIndicators)
+		plain, display := renderSpaceRow(spaceRow{status: workspace.AgentStatus, source: SourceHerdr, name: name, git: git, path: path}, layout.StatusIndicators, th)
 		items = append(items, Item{
 			Kind:        KindSpace,
 			ID:          selectionID(KindSpace, workspace.WorkspaceID),
@@ -118,7 +118,7 @@ func buildSpaceItems(snapshot herdr.SessionSnapshot, history focus.History, layo
 	return items
 }
 
-func buildAgentItems(snapshot herdr.SessionSnapshot, history focus.History, layout sidebarLayout) []Item {
+func buildAgentItems(snapshot herdr.SessionSnapshot, history focus.History, layout sidebarLayout, th colorTheme) []Item {
 	agents := append([]herdr.AgentRow{}, snapshot.Agents...)
 	sort.SliceStable(agents, func(i, j int) bool {
 		left := focus.AgentPriorityRank(agents[i].AgentStatus)
@@ -137,7 +137,7 @@ func buildAgentItems(snapshot herdr.SessionSnapshot, history focus.History, layo
 		if !ok {
 			liveID = focus.AgentLiveID{PaneID: agent.PaneID, Generation: 1}
 		}
-		plain, display := renderAgentSidebarRows(snapshot, agent, layout)
+		plain, display := renderAgentSidebarRows(snapshot, agent, layout, th)
 		items = append(items, Item{
 			Kind:        KindAgent,
 			ID:          selectionID(KindAgent, liveID.String()),
@@ -184,8 +184,10 @@ func sourceBadge(source string) string {
 	return herdrSourceIcon + " " + SourceHerdr
 }
 
-func renderSpaceRow(row spaceRow, statusIndicators string) (plain, display string) {
-	prefix, styledPrefix := statePrefix(row.status, statusIndicators)
+func renderSpaceRow(row spaceRow, statusIndicators string, th colorTheme) (plain, display string) {
+	th = themeOrDefault(th)
+	muted := th.Muted
+	prefix, styledPrefix := statePrefix(row.status, statusIndicators, th)
 	if prefix == "" {
 		prefix = strings.Repeat(" ", statusSlotWidth)
 		styledPrefix = prefix
@@ -193,21 +195,21 @@ func renderSpaceRow(row spaceRow, statusIndicators string) (plain, display strin
 	badge := sourceBadge(row.source)
 	badge += strings.Repeat(" ", max(0, badgeColumnWidth-len([]rune(badge))))
 	plain = prefix + badge + row.name
-	display = styledPrefix + mutedSGR + badge + "\x1b[0m" + "\x1b[1m" + row.name + "\x1b[0m"
+	display = styledPrefix + muted + badge + "\x1b[0m" + "\x1b[1m" + row.name + "\x1b[0m"
 	if row.tag != "" {
 		plain += " (" + row.tag + ")"
-		display += " " + mutedSGR + "(" + row.tag + ")" + "\x1b[0m"
+		display += " " + muted + "(" + row.tag + ")" + "\x1b[0m"
 	}
 	if detail := strings.TrimSpace(row.git.Branch + " " + row.git.Status); detail != "" {
 		if row.git.Branch != "" {
 			detail = gitBranchIcon + " " + detail
 		}
 		plain += "  " + detail
-		display += "  " + mutedSGR + detail + "\x1b[0m"
+		display += "  " + muted + detail + "\x1b[0m"
 	}
 	if row.path != "" {
 		plain += pathSeparator + row.path
-		display += pathSeparator + mutedSGR + row.path + "\x1b[0m"
+		display += pathSeparator + muted + row.path + "\x1b[0m"
 	}
 	return plain, display
 }
@@ -223,13 +225,25 @@ func (item Item) withoutPathColumn() Item {
 	item.Rows = rows
 	if len(item.DisplayRows) > 0 {
 		display := append([]string{}, item.DisplayRows...)
-		display[0] = strings.TrimSuffix(display[0], pathSeparator+mutedSGR+item.Path+"\x1b[0m")
+		display[0] = stripDisplayPath(display[0], item.Path)
 		item.DisplayRows = display
 	}
 	return item
 }
 
-func renderAgentSidebarRows(snapshot herdr.SessionSnapshot, agent herdr.AgentRow, layout sidebarLayout) (plain, display []string) {
+func stripDisplayPath(display, path string) string {
+	suffix := path + "\x1b[0m"
+	if !strings.HasSuffix(display, suffix) {
+		return strings.TrimSuffix(display, pathSeparator+mutedSGR+path+"\x1b[0m")
+	}
+	base := strings.TrimSuffix(display, suffix)
+	if i := strings.LastIndex(base, pathSeparator); i >= 0 {
+		return base[:i]
+	}
+	return base
+}
+
+func renderAgentSidebarRows(snapshot herdr.SessionSnapshot, agent herdr.AgentRow, layout sidebarLayout, th colorTheme) (plain, display []string) {
 	workspaceLabel := agent.WorkspaceID
 	if workspace, ok := herdr.WorkspaceByID(snapshot, agent.WorkspaceID); ok && workspace.Label != "" {
 		workspaceLabel = workspace.Label
@@ -260,24 +274,26 @@ func renderAgentSidebarRows(snapshot herdr.SessionSnapshot, agent herdr.AgentRow
 	// Keep Herdr's configured description rows, including per-harness overrides and reported tokens.
 	var details []string
 	if len(rows) > 1 {
-		details, _ = renderSidebarRows(rows[1:], values, agent.AgentStatus)
+		details, _ = renderSidebarRows(rows[1:], values, agent.AgentStatus, th)
 	}
-	prefix, styledPrefix := statePrefix(agent.AgentStatus, layout.StatusIndicators)
+	th = themeOrDefault(th)
+	muted := th.Muted
+	prefix, styledPrefix := statePrefix(agent.AgentStatus, layout.StatusIndicators, th)
 	heading := agentHarnessIcon(agent.Agent) + " " + space.SanitizeDisplayText(firstNonEmpty(tabLabel, agent.Label, agent.PaneID))
 	location := space.SanitizeDisplayText(workspaceLabel)
 	if dir := abbreviatedDirectory(firstNonEmpty(agent.ForegroundCwd, agent.Cwd)); dir != "" {
 		location += " (" + space.SanitizeDisplayText(dir) + ")"
 	}
 	plain = []string{prefix + heading, location}
-	display = []string{styledPrefix + heading, mutedSGR + location + "\x1b[0m"}
+	display = []string{styledPrefix + heading, muted + location + "\x1b[0m"}
 	if description := strings.Join(details, " "); description != "" {
 		plain = append(plain, description)
-		display = append(display, mutedSGR+description+"\x1b[0m")
+		display = append(display, muted+description+"\x1b[0m")
 	}
 	return plain, display
 }
 
-func renderSidebarRows(layout [][]sidebarToken, values map[string]string, status string) (plain, display []string) {
+func renderSidebarRows(layout [][]sidebarToken, values map[string]string, status string, th colorTheme) (plain, display []string) {
 	for _, cells := range layout {
 		var plainParts []string
 		var displayParts []string
@@ -286,8 +302,12 @@ func renderSidebarRows(layout [][]sidebarToken, values map[string]string, status
 			if value == "" {
 				continue
 			}
+			styled, hidden := applySidebarRules(cell, value)
+			if hidden {
+				continue
+			}
 			plainParts = append(plainParts, value)
-			displayParts = append(displayParts, stylePlainToken(cell, value, status))
+			displayParts = append(displayParts, stylePlainToken(styled, value, status, th))
 		}
 		if len(plainParts) == 0 {
 			continue
