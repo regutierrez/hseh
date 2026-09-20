@@ -431,7 +431,7 @@ func TestViewLinesFillWidth(t *testing.T) {
 
 func TestThemeResolution(t *testing.T) {
 	th := resolveTheme("Tokyo Night", nil)
-	if th.Name != "tokyo-night" || th.Accent != hexSGR("#7aa2f7", false) || th.Text != hexSGR("#c0caf5", false) || th.PanelBg != hexSGR("#1a1b26", false) || !strings.HasPrefix(th.TabActive, "\x1b[48;2;") {
+	if th.Name != "tokyo-night" || th.Accent != hexSGR("#7aa2f7") || th.Text != hexSGR("#c0caf5") || th.PanelBg != hexSGR("#1a1b26") || !strings.HasPrefix(th.TabActive, "\x1b[48;2;") {
 		t.Fatalf("tokyo-night %+v", th)
 	}
 	th = resolveTheme("terminal", nil)
@@ -439,11 +439,11 @@ func TestThemeResolution(t *testing.T) {
 		t.Fatalf("terminal %+v", th)
 	}
 	th = resolveTheme("nope", map[string]string{"accent": "#123456", "mauve": "bad"})
-	if th.Accent != hexSGR("#123456", false) || th.Mauve != hexSGR("#cba6f7", false) {
+	if th.Accent != hexSGR("#123456") || th.Mauve != hexSGR("#cba6f7") {
 		t.Fatalf("custom override %+v", th)
 	}
-	if hexSGR("#abc", true) != "\x1b[48;2;170;187;204m" {
-		t.Fatalf("short hex %q", hexSGR("#abc", true))
+	if hexSGR("#abc") != "\x1b[38;2;170;187;204m" {
+		t.Fatalf("short hex %q", hexSGR("#abc"))
 	}
 }
 

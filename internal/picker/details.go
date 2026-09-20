@@ -9,7 +9,7 @@ import (
 // mutedSGR is the default-theme (catppuccin) subtext0 SGR. Tests that build
 // DisplayRows without a live theme, and rows assembled with an empty theme,
 // use this token instead of a hardcoded 256-color gray.
-var mutedSGR = hexSGR("#a6adc8", false)
+var mutedSGR = hexSGR("#a6adc8")
 
 // Nerd Fonts 3 glyph: nf-dev-git_branch.
 const gitBranchIcon = "\ue725"

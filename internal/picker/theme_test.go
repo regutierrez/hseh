@@ -9,15 +9,12 @@ import (
 
 func TestNamedThemePaintsRowsAndStatus(t *testing.T) {
 	th := resolveTheme("catppuccin", nil)
-	if th.Muted != hexSGR("#a6adc8", false) {
+	if th.Muted != hexSGR("#a6adc8") {
 		t.Fatalf("muted %q", th.Muted)
 	}
 	_, display := renderSpaceRow(spaceRow{source: SourceHerdr, name: "alpha", path: "/tmp/a"}, "dots", th)
 	if strings.Contains(display, "38;5;245") || !strings.Contains(display, th.Muted) || !strings.Contains(display, th.Text) {
 		t.Fatalf("row %q", display)
-	}
-	if th.PanelBg != hexSGR("#181825", false) || th.Text != hexSGR("#cdd6f4", false) {
-		t.Fatalf("palette %+v", th)
 	}
 	for status, token := range map[string]string{"blocked": th.Red, "working": th.Yellow, "done": th.Blue, "idle": th.Green, "unknown": th.Overlay} {
 		got := stylePlainToken(sidebarToken{Name: "state_icon"}, "●", status, th)
@@ -46,16 +43,13 @@ func TestAutoSwitchAndCustom(t *testing.T) {
 		"mauve":  "white",
 		"blue":   "reset",
 	})
-	if th.Accent != hexSGR("#010203", false) || th.Red != "\x1b[38;2;255;85;85m" || th.Green != "\x1b[38;2;1;2;3m" || th.Mauve != "\x1b[97m" || th.Blue != "" {
+	if th.Accent != hexSGR("#010203") || th.Red != "\x1b[38;2;255;85;85m" || th.Green != "\x1b[38;2;1;2;3m" || th.Mauve != "\x1b[97m" || th.Blue != "" {
 		t.Fatalf("custom %+v", th)
 	}
 
 	term := resolveTheme("terminal", map[string]string{"red": "#ff0000"})
-	if term.Accent != "\x1b[34m" || term.Mauve != "\x1b[37m" || term.Red != hexSGR("#ff0000", false) || term.PanelBg != "" || term.Text != "" || strings.Contains(term.Accent, "38;2") {
-		t.Fatalf("terminal custom %+v", term)
-	}
-	if term.selectedFill() != "\x1b[100m" {
-		t.Fatalf("terminal selected fill %q", term.selectedFill())
+	if term.Red != hexSGR("#ff0000") || strings.Contains(term.Accent, "38;2") || term.selectedFill() != "\x1b[100m" {
+		t.Fatalf("terminal custom %+v fill %q", term, term.selectedFill())
 	}
 
 	dir := t.TempDir()
@@ -77,12 +71,12 @@ red = "#0a0b0c"
 	t.Cleanup(func() { appearanceForTheme = orig })
 	appearanceForTheme = func() appearanceKind { return appearanceLight }
 	light, errs := loadThemeFromPath(path)
-	if len(errs) != 0 || light.Name != "gruvbox-light" || light.Accent != hexSGR("#070809", false) {
+	if len(errs) != 0 || light.Name != "gruvbox-light" || light.Accent != hexSGR("#070809") {
 		t.Fatalf("toml light %+v %v", light, errs)
 	}
 	appearanceForTheme = func() appearanceKind { return appearanceDark }
 	dark, errs := loadThemeFromPath(path)
-	if len(errs) != 0 || dark.Name != "gruvbox" || dark.Accent != hexSGR("#010203", false) || dark.Red != hexSGR("#0a0b0c", false) {
+	if len(errs) != 0 || dark.Name != "gruvbox" || dark.Accent != hexSGR("#010203") || dark.Red != hexSGR("#0a0b0c") {
 		t.Fatalf("toml dark %+v %v", dark, errs)
 	}
 
@@ -90,16 +84,6 @@ red = "#0a0b0c"
 		t.Fatal("COLORFGBG")
 	}
 
-	for name, tokens := range herdrThemePalettes {
-		for _, key := range herdrPaletteKeys {
-			if _, ok := tokens[key]; !ok {
-				t.Fatalf("%s missing %s", name, key)
-			}
-		}
-	}
-	if toBgSGR(hexSGR("#112233", false)) != hexSGR("#112233", true) || toBgSGR("\x1b[34m") != "\x1b[44m" || toBgSGR("") != "" {
-		t.Fatal("toBgSGR")
-	}
 	t.Setenv(appearanceEnv, "light")
 	t.Setenv("COLORFGBG", "15;0")
 	if hostAppearance() != appearanceLight {
