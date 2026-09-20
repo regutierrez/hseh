@@ -152,7 +152,7 @@ func parseSidebarTokenRows(raw [][]any) [][]sidebarToken {
 	return rows
 }
 
-// Glyphs mirror the settings preview in Herdr 0.9.0.
+// Glyphs copy herdr status_icon: dots "● ● ● ○ ·", symbols "× ◐ ✓ ○ ·".
 func stateIconGlyph(status, mode string) string {
 	if mode == "symbols" {
 		switch status {

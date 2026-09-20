@@ -68,6 +68,85 @@ func seedAgentHistory(t *testing.T, socket, stateDir, sessionValue string) {
 	}
 }
 
+func TestCompiledListUsesHerdrSymbolIndicators(t *testing.T) {
+	snapshot := herdr.SessionSnapshot{
+		Workspaces: []herdr.WorkspaceRow{
+			{WorkspaceID: "w1", Label: "blocked-space", AgentStatus: "blocked", ActiveTabID: "w1:t1"},
+			{WorkspaceID: "w2", Label: "working-space", AgentStatus: "working", ActiveTabID: "w2:t1"},
+			{WorkspaceID: "w3", Label: "done-space", AgentStatus: "done", ActiveTabID: "w3:t1"},
+			{WorkspaceID: "w4", Label: "idle-space", AgentStatus: "idle", ActiveTabID: "w4:t1"},
+			{WorkspaceID: "w5", Label: "unknown-space", AgentStatus: "unknown", ActiveTabID: "w5:t1"},
+		},
+		Tabs: []herdr.TabRow{
+			{TabID: "w1:t1", Label: "blocked-tab"},
+			{TabID: "w2:t1", Label: "working-tab"},
+			{TabID: "w3:t1", Label: "done-tab"},
+			{TabID: "w4:t1", Label: "idle-tab"},
+			{TabID: "w5:t1", Label: "unknown-tab"},
+		},
+		Agents: []herdr.AgentRow{
+			{PaneRow: herdr.PaneRow{PaneID: "w1:p1", WorkspaceID: "w1", TabID: "w1:t1", Agent: "pi", AgentStatus: "blocked", DisplayAgent: "blocked-bot"}},
+			{PaneRow: herdr.PaneRow{PaneID: "w2:p1", WorkspaceID: "w2", TabID: "w2:t1", Agent: "pi", AgentStatus: "working", DisplayAgent: "working-bot"}},
+			{PaneRow: herdr.PaneRow{PaneID: "w3:p1", WorkspaceID: "w3", TabID: "w3:t1", Agent: "pi", AgentStatus: "done", DisplayAgent: "done-bot"}},
+			{PaneRow: herdr.PaneRow{PaneID: "w4:p1", WorkspaceID: "w4", TabID: "w4:t1", Agent: "pi", AgentStatus: "idle", DisplayAgent: "idle-bot"}},
+			{PaneRow: herdr.PaneRow{PaneID: "w5:p1", WorkspaceID: "w5", TabID: "w5:t1", Agent: "pi", AgentStatus: "unknown", DisplayAgent: "unknown-bot"}},
+		},
+	}
+	socketPath, stateDir := hsehtest.Start(t, &hsehtest.Server{Snapshot: snapshot})
+	herdrConfig := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(herdrConfig, []byte("[ui]\nstatus_indicators = \"symbols\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	env := append(hsehtest.Env(socketPath, stateDir, t.TempDir()), "HERDR_CONFIG_PATH="+herdrConfig)
+	want := []struct {
+		view, glyph, name string
+	}{
+		{"spaces", "×", "blocked-space"},
+		{"spaces", "◐", "working-space"},
+		{"spaces", "✓", "done-space"},
+		{"spaces", "○", "idle-space"},
+		{"spaces", "·", "unknown-space"},
+		{"agents", "×", "blocked-tab"},
+		{"agents", "◐", "working-tab"},
+		{"agents", "✓", "done-tab"},
+		{"agents", "○", "idle-tab"},
+		{"agents", "·", "unknown-tab"},
+	}
+	rowsByView := map[string][]string{}
+	for _, view := range []string{"spaces", "agents"} {
+		out, err := runCompiledHseh(env, "list", "--json", "--view", view)
+		if err != nil {
+			t.Fatalf("%s: %v\n%s", view, err, out)
+		}
+		var doc picker.ListDocument
+		if err := json.Unmarshal([]byte(out), &doc); err != nil {
+			t.Fatalf("%s json: %v\n%s", view, err, out)
+		}
+		if len(doc.Items) != 5 {
+			t.Fatalf("%s items %#v", view, doc.Items)
+		}
+		for _, item := range doc.Items {
+			if len(item.Rows) == 0 {
+				t.Fatalf("%s empty rows %+v", view, item)
+			}
+			rowsByView[view] = append(rowsByView[view], item.Rows[0])
+			t.Logf("%s %s", view, item.Rows[0])
+		}
+	}
+	for _, c := range want {
+		found := false
+		for _, row := range rowsByView[c.view] {
+			if strings.HasPrefix(row, c.glyph+" ") && strings.Contains(row, c.name) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("%s missing %s %s in %q", c.view, c.glyph, c.name, rowsByView[c.view])
+		}
+	}
+}
+
 func TestCompiledCLIListJSON(t *testing.T) {
 	snapshot := herdr.SessionSnapshot{
 		FocusedWorkspaceID: "w1",

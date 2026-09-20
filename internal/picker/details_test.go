@@ -21,6 +21,14 @@ func TestHerdrDotGlyphsAndColors(t *testing.T) {
 	}
 }
 
+func TestHerdrSymbolGlyphs(t *testing.T) {
+	for _, c := range []struct{ status, glyph string }{{"blocked", "×"}, {"working", "◐"}, {"done", "✓"}, {"idle", "○"}, {"unknown", "·"}} {
+		if got := stateIconGlyph(c.status, "symbols"); got != c.glyph {
+			t.Errorf("%s glyph %s want %s", c.status, got, c.glyph)
+		}
+	}
+}
+
 func TestAgentDetailsUseHerdrDescriptionAndDirectory(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

@@ -22,6 +22,10 @@ func TestNamedThemePaintsRowsAndStatus(t *testing.T) {
 			t.Fatalf("%s %q", status, got)
 		}
 	}
+	_, symbols := renderSpaceRow(spaceRow{status: "done", source: SourceHerdr, name: "alpha"}, "symbols", th)
+	if !strings.Contains(symbols, "✓") || !strings.Contains(symbols, th.Blue) {
+		t.Fatalf("symbols %q", symbols)
+	}
 }
 
 func TestAutoSwitchAndCustom(t *testing.T) {
