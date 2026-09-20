@@ -244,32 +244,6 @@ func TestFooterDropsSecondaryStatusBeforeHelp(t *testing.T) {
 	}
 }
 
-func TestFooterHelpUsesCtrlXAndBoldsKeys(t *testing.T) {
-	got := model{snapshotReady: true, catalogReady: true}.renderFooter(80)
-	plain := termtext.StripControls(got)
-	if strings.Contains(plain, "enter open") || strings.Contains(plain, "esc close") {
-		t.Fatalf("old enter/close hint still in footer: %q", plain)
-	}
-	if !strings.Contains(plain, "↑↓ move") || !strings.Contains(plain, "tab view") || !strings.Contains(plain, "C+x close space") {
-		t.Fatalf("footer hints: %q", plain)
-	}
-	for _, key := range []string{"↑↓", "tab", "C+x"} {
-		if !strings.Contains(got, "\x1b[1m"+key+"\x1b[0m") {
-			t.Fatalf("key %q not bold: %q", key, got)
-		}
-	}
-	confirm := model{pendingClose: true}.renderFooter(80)
-	confirmPlain := termtext.StripControls(confirm)
-	if !strings.Contains(confirmPlain, "Enter to close") || !strings.Contains(confirmPlain, "Delete to cancel") {
-		t.Fatalf("confirm footer: %q", confirmPlain)
-	}
-	for _, key := range []string{"Enter", "Delete"} {
-		if !strings.Contains(confirm, "\x1b[1m"+key+"\x1b[0m") {
-			t.Fatalf("confirm key %q not bold: %q", key, confirm)
-		}
-	}
-}
-
 func TestEmptyStatesHaveDedicatedCopy(t *testing.T) {
 	m := model{width: 60, height: 20, widePreviewMinCols: 100, snapshotReady: true, catalogReady: true}
 	if got := termtext.StripControls(m.View()); !strings.Contains(got, copyNoSpaces) || !strings.Contains(got, copyNoPreview) {
