@@ -82,6 +82,16 @@ func CloseTab(ctx context.Context, tabID string) error {
 	return err
 }
 
+func CloseWorkspace(ctx context.Context, workspaceID string) error {
+	_, err := callContext(ctx, "workspace.close", map[string]any{"workspace_id": workspaceID}, nil)
+	return err
+}
+
+func ClosePane(ctx context.Context, paneID string) error {
+	_, err := callContext(ctx, "pane.close", map[string]any{"pane_id": paneID}, nil)
+	return err
+}
+
 func SplitPane(ctx context.Context, targetPaneID, direction string, ratio float64, cwd string, focus bool) (string, error) {
 	params := map[string]any{
 		"target_pane_id": targetPaneID,

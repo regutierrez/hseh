@@ -68,6 +68,8 @@ type catalogLoadedMsg struct {
 
 type acceptedMsg struct{}
 
+type closedMsg struct{ item Item }
+
 type errorMsg struct{ err error }
 
 type cancelSet struct {
@@ -171,6 +173,8 @@ type model struct {
 
 	launch        launchContext
 	pendingAccept bool
+	pendingClose  bool
+	closeItem     func(ctx context.Context, item Item) error
 	quitting      bool
 	cancels       *cancelSet
 	milestones    map[string]bool
@@ -218,7 +222,7 @@ func (m *model) rebuildVisible() {
 
 func (m *model) catalogItems() []Item {
 	live := liveState{snapshot: m.snapshot, history: m.history, records: m.associationRecords, unresolved: m.unresolvedRecords}
-	return assembleItems(m.view, live, m.layout, m.definitions, m.gitByDirectory)
+	return omitLaunchTargets(assembleItems(m.view, live, m.layout, m.definitions, m.gitByDirectory), m.launch)
 }
 
 // previewTarget names what the item previews: a live agent pane, or the directory of a space/template.
@@ -432,8 +436,18 @@ func update(m *model, msg tea.Msg) tea.Cmd {
 		m.quitting = true
 		m.io().cancelAll()
 		return tea.Quit
+	case closedMsg:
+		m.pendingAccept = false
+		m.acceptErr = ""
+		m.recomputeStatus()
+		if m.selectedID == msg.item.ID {
+			m.selectedID = neighborItemID(m.visible, msg.item.ID)
+		}
+		m.removeClosedFromSnapshot(msg.item)
+		return tea.Batch(m.refreshMembership(), m.afterSelectionChange())
 	case errorMsg:
 		m.pendingAccept = false
+		m.pendingClose = false
 		m.acceptErr = msg.err.Error()
 		m.recomputeStatus()
 		return nil
@@ -442,25 +456,39 @@ func update(m *model, msg tea.Msg) tea.Cmd {
 		case tea.KeyCtrlC, tea.KeyEsc:
 			m.quitting = true
 			m.pendingAccept = false
+			m.pendingClose = false
 			m.io().cancelAll()
 			return tea.Quit
+		case tea.KeyCtrlX:
+			return m.armClose()
+		case tea.KeyDelete:
+			m.pendingClose = false
+			return nil
 		case tea.KeyEnter:
+			if m.pendingClose {
+				return m.startClose()
+			}
 			return m.startAccept()
 		case tea.KeyUp:
 			// Ranked blocks grow upward, so later indexes sit physically higher.
+			m.cancelPendingClose()
 			m.moveSelection(1)
 			return m.afterSelectionChange()
 		case tea.KeyDown:
+			m.cancelPendingClose()
 			m.moveSelection(-1)
 			return m.afterSelectionChange()
 		case tea.KeyTab:
+			m.cancelPendingClose()
 			m.cycleView(1)
 			return m.afterSelectionChange()
 		case tea.KeyShiftTab:
+			m.cancelPendingClose()
 			m.cycleView(-1)
 			return m.afterSelectionChange()
 		case tea.KeyBackspace:
 			if len(m.query) > 0 {
+				m.cancelPendingClose()
 				r := []rune(m.query)
 				m.query = string(r[:len(r)-1])
 				m.applyQuery()
@@ -468,6 +496,7 @@ func update(m *model, msg tea.Msg) tea.Cmd {
 			return m.afterSelectionChange()
 		default:
 			if msg.Type == tea.KeyRunes {
+				m.cancelPendingClose()
 				m.query += termtext.StripControls(string(msg.Runes))
 				m.applyQuery()
 				return m.afterSelectionChange()
@@ -506,6 +535,7 @@ func (m *model) handleMouse(msg tea.MouseMsg) tea.Cmd {
 	if id == "" || id == m.selectedID {
 		return nil
 	}
+	m.cancelPendingClose()
 	m.selectedID = id
 	return m.afterSelectionChange()
 }
@@ -715,6 +745,124 @@ func (m *model) startDirectoryPreview(item Item, dir string) tea.Cmd {
 	return tea.Batch(readCmd, m.previewLoadingCmd(ctx, seq))
 }
 
+func (m *model) cancelPendingClose() {
+	m.pendingClose = false
+}
+
+func itemCloseable(item Item) bool {
+	switch item.Kind {
+	case KindSpace:
+		return item.WorkspaceID != ""
+	case KindAgent:
+		return item.PaneID != ""
+	default:
+		return false
+	}
+}
+
+func (m *model) armClose() tea.Cmd {
+	if m.quitting || m.pendingAccept {
+		return nil
+	}
+	item, ok := m.selectedItem()
+	if !ok || !itemCloseable(item) {
+		return nil
+	}
+	m.pendingClose = true
+	m.acceptErr = ""
+	m.recomputeStatus()
+	return nil
+}
+
+func (m *model) itemCloser() func(ctx context.Context, item Item) error {
+	if m.closeItem != nil {
+		return m.closeItem
+	}
+	return closeLiveItem
+}
+
+func closeLiveItem(ctx context.Context, item Item) error {
+	switch item.Kind {
+	case KindSpace:
+		return herdr.CloseWorkspace(ctx, item.WorkspaceID)
+	case KindAgent:
+		return herdr.ClosePane(ctx, item.PaneID)
+	default:
+		return nil
+	}
+}
+
+func (m *model) startClose() tea.Cmd {
+	if m.quitting || m.pendingAccept || !m.pendingClose {
+		return nil
+	}
+	item, ok := m.selectedItem()
+	if !ok || !itemCloseable(item) {
+		m.pendingClose = false
+		return nil
+	}
+	m.pendingAccept = true
+	m.pendingClose = false
+	closer := m.itemCloser()
+	ctx := m.io().replace(&m.io().accept)
+	return func() tea.Msg {
+		defer trace.Span("close", "kind", item.Kind)()
+		if ctx.Err() != nil {
+			return errorMsg{err: ctx.Err()}
+		}
+		if err := closer(ctx, item); err != nil {
+			return errorMsg{err: err}
+		}
+		if ctx.Err() != nil {
+			return errorMsg{err: ctx.Err()}
+		}
+		return closedMsg{item: item}
+	}
+}
+
+func neighborItemID(items []Item, id string) string {
+	for i, item := range items {
+		if item.ID != id {
+			continue
+		}
+		if i+1 < len(items) {
+			return items[i+1].ID
+		}
+		if i > 0 {
+			return items[i-1].ID
+		}
+		return ""
+	}
+	return ""
+}
+
+func (m *model) removeClosedFromSnapshot(item Item) {
+	switch item.Kind {
+	case KindSpace:
+		var workspaces []herdr.WorkspaceRow
+		for _, workspace := range m.snapshot.Workspaces {
+			if workspace.WorkspaceID != item.WorkspaceID {
+				workspaces = append(workspaces, workspace)
+			}
+		}
+		m.snapshot.Workspaces = workspaces
+		if m.snapshot.FocusedWorkspaceID == item.WorkspaceID {
+			m.snapshot.FocusedWorkspaceID = ""
+		}
+	case KindAgent:
+		var agents []herdr.AgentRow
+		for _, agent := range m.snapshot.Agents {
+			if agent.PaneID != item.PaneID {
+				agents = append(agents, agent)
+			}
+		}
+		m.snapshot.Agents = agents
+		if m.snapshot.FocusedPaneID == item.PaneID {
+			m.snapshot.FocusedPaneID = ""
+		}
+	}
+}
+
 func (m *model) startAccept() tea.Cmd {
 	if m.quitting || m.pendingAccept {
 		return nil
@@ -855,6 +1003,7 @@ func (m *model) refreshMembership() tea.Cmd {
 	}
 	item, ok := m.selectedItem()
 	if !ok {
+		m.pendingClose = false
 		m.selectedID = ""
 		m.stopPreviewChain()
 		m.clearPreview()

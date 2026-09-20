@@ -108,6 +108,21 @@ func isCurrentItem(item Item, launch launchContext) bool {
 	}
 }
 
+// omitLaunchTargets drops the space and agent focused when the picker opened.
+// They are not rows, so they cannot be selected, focused, or closed from hseh.
+func omitLaunchTargets(items []Item, launch launchContext) []Item {
+	if launch.CurrentSpace == "" && launch.CurrentAgent == "" {
+		return items
+	}
+	out := make([]Item, 0, len(items))
+	for _, item := range items {
+		if !isCurrentItem(item, launch) {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
 func hasItemID(items []Item, id string) bool {
 	for _, item := range items {
 		if item.ID == id {

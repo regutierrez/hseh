@@ -33,6 +33,8 @@ const selectionRail = "┃"
 const railWidth = 2
 
 const helpText = "↑↓ move · tab view · enter open · esc close"
+const closeConfirmHint = "Enter to close · Delete to cancel"
+const closeConfirmMark = "close?"
 
 // pathColumnMinWidth is the narrowest list content that still shows the absolute path column.
 // With the default 50/50 split this is a popup of about 94 columns.
@@ -295,13 +297,18 @@ func (m model) renderFooter(width int) string {
 	}
 	th := m.th()
 	help := helpText
+	helpColor := th.Muted
+	if m.pendingClose {
+		help = closeConfirmHint
+		helpColor = th.Yellow
+	}
 	helpW := ansi.StringWidth(help)
 	if m.statusErr != "" {
 		errText := strings.ReplaceAll(strings.ReplaceAll(m.statusErr, "\n", " "), "\t", " ")
 		errW := ansi.StringWidth(errText)
 		if errW+2+helpW <= width {
 			gap := width - errW - helpW
-			return padDisplayWidth(th.Red+errText+"\x1b[0m"+strings.Repeat(" ", gap)+th.Muted+help+"\x1b[0m", width)
+			return padDisplayWidth(th.Red+errText+"\x1b[0m"+strings.Repeat(" ", gap)+helpColor+help+"\x1b[0m", width)
 		}
 		return padDisplayWidth(th.Red+ansi.Truncate(errText, width, "…")+"\x1b[0m", width)
 	}
@@ -315,9 +322,9 @@ func (m model) renderFooter(width int) string {
 	statusW := ansi.StringWidth(status)
 	if status != "" && statusW+2+helpW <= width {
 		gap := width - statusW - helpW
-		return padDisplayWidth(th.Muted+status+"\x1b[0m"+strings.Repeat(" ", gap)+th.Muted+help+"\x1b[0m", width)
+		return padDisplayWidth(th.Muted+status+"\x1b[0m"+strings.Repeat(" ", gap)+helpColor+help+"\x1b[0m", width)
 	}
-	return padDisplayWidth(th.Muted+ansi.Truncate(help, width, "…")+"\x1b[0m", width)
+	return padDisplayWidth(helpColor+ansi.Truncate(help, width, "…")+"\x1b[0m", width)
 }
 
 func (m model) View() string {
@@ -414,6 +421,9 @@ func (m model) wrapItemBlock(item Item, selected bool, contentWidth int) []strin
 	for i, row := range rows {
 		if selected && i == 0 {
 			row = emboldenAfterResets(row)
+			if m.pendingClose {
+				row += "  " + m.th().Red + closeConfirmMark + "\x1b[0m"
+			}
 		}
 		if item.Path != "" {
 			// Spaces rows stay one line: a long path is cut, never wrapped onto a second row.
