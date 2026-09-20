@@ -32,9 +32,40 @@ const searchCaret = "▏"
 const selectionRail = "┃"
 const railWidth = 2
 
-const helpText = "↑↓ move · tab view · enter open · esc close"
-const closeConfirmHint = "Enter to close · Delete to cancel"
 const closeConfirmMark = "close?"
+
+type helpHint struct {
+	key    string
+	action string
+}
+
+var helpHints = []helpHint{
+	{"↑↓", "move"},
+	{"tab", "view"},
+	{"C+x", "close space"},
+}
+
+var closeConfirmHints = []helpHint{
+	{"Enter", "to close"},
+	{"Delete", "to cancel"},
+}
+
+func joinHelp(hints []helpHint) string {
+	parts := make([]string, len(hints))
+	for i, h := range hints {
+		parts[i] = h.key + " " + h.action
+	}
+	return strings.Join(parts, " · ")
+}
+
+// styleHelp bolds the key/icon of each hint and leaves the action word regular.
+func styleHelp(hints []helpHint, color string) string {
+	parts := make([]string, len(hints))
+	for i, h := range hints {
+		parts[i] = color + "\x1b[1m" + h.key + "\x1b[0m" + color + " " + h.action
+	}
+	return strings.Join(parts, " · ")
+}
 
 // pathColumnMinWidth is the narrowest list content that still shows the absolute path column.
 // With the default 50/50 split this is a popup of about 94 columns.
@@ -303,19 +334,21 @@ func (m model) renderFooter(width int) string {
 		return ""
 	}
 	th := m.th()
-	help := helpText
+	hints := helpHints
 	helpColor := th.Muted
 	if m.pendingClose {
-		help = closeConfirmHint
+		hints = closeConfirmHints
 		helpColor = th.Yellow
 	}
+	help := joinHelp(hints)
+	styled := styleHelp(hints, helpColor)
 	helpW := ansi.StringWidth(help)
 	if m.statusErr != "" {
 		errText := strings.ReplaceAll(strings.ReplaceAll(m.statusErr, "\n", " "), "\t", " ")
 		errW := ansi.StringWidth(errText)
 		if errW+2+helpW <= width {
 			gap := width - errW - helpW
-			return applySurface(th.Red+errText+"\x1b[0m"+strings.Repeat(" ", gap)+helpColor+help+"\x1b[0m", th.panelFill(), width)
+			return applySurface(th.Red+errText+"\x1b[0m"+strings.Repeat(" ", gap)+styled+"\x1b[0m", th.panelFill(), width)
 		}
 		return applySurface(th.Red+ansi.Truncate(errText, width, "…")+"\x1b[0m", th.panelFill(), width)
 	}
@@ -329,9 +362,9 @@ func (m model) renderFooter(width int) string {
 	statusW := ansi.StringWidth(status)
 	if status != "" && statusW+2+helpW <= width {
 		gap := width - statusW - helpW
-		return applySurface(th.Muted+status+"\x1b[0m"+strings.Repeat(" ", gap)+helpColor+help+"\x1b[0m", th.panelFill(), width)
+		return applySurface(th.Muted+status+"\x1b[0m"+strings.Repeat(" ", gap)+styled+"\x1b[0m", th.panelFill(), width)
 	}
-	return applySurface(helpColor+ansi.Truncate(help, width, "…")+"\x1b[0m", th.panelFill(), width)
+	return applySurface(ansi.Truncate(styled, width, "…")+"\x1b[0m", th.panelFill(), width)
 }
 
 func (m model) View() string {
