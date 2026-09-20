@@ -10,6 +10,34 @@ import (
 	"github.com/regutierrez/hseh/internal/herdr"
 )
 
+func TestLoadSidebarLayoutUsesHerdrSymbolIndicators(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	if err := os.WriteFile(path, []byte("[ui]\nstatus_indicators = \"symbols\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	layout, errs := loadSidebarLayout(path)
+	if len(errs) != 0 {
+		t.Fatalf("%v", errs)
+	}
+	if layout.StatusIndicators != "symbols" {
+		t.Fatalf("status indicators %q", layout.StatusIndicators)
+	}
+	plain, _ := renderSpaceRow(spaceRow{status: "working", source: SourceHerdr, name: "alpha"}, layout.StatusIndicators, colorTheme{})
+	if !strings.HasPrefix(plain, "◐ ") {
+		t.Fatalf("space working %q", plain)
+	}
+	snapshot := herdr.SessionSnapshot{
+		Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w1", Label: "alpha"}},
+		Tabs:       []herdr.TabRow{{TabID: "w1:t1", Label: "tab"}},
+	}
+	agent := herdr.AgentRow{PaneRow: herdr.PaneRow{PaneID: "w1:p1", WorkspaceID: "w1", TabID: "w1:t1", Agent: "pi", AgentStatus: "done"}}
+	rows, _ := renderAgentSidebarRows(snapshot, agent, layout, colorTheme{})
+	if len(rows) == 0 || !strings.HasPrefix(rows[0], "✓ ") {
+		t.Fatalf("agent done %q", rows)
+	}
+}
+
 func TestLoadSidebarLayoutKeepsOrdinaryRowStyles(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
