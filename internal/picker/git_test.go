@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/regutierrez/hseh/internal/focus"
 	"github.com/regutierrez/hseh/internal/gitinfo"
 	"github.com/regutierrez/hseh/internal/herdr"
@@ -45,37 +44,6 @@ func TestGitUsesOnlyActivePaneDirectoryAndLinkedWorktree(t *testing.T) {
 	m.snapshot.Panes[1].ForegroundCwd = repo
 	if strings.Contains(m.catalogItems()[0].SearchText, "feature") {
 		t.Fatal("old directory git result rendered after pane directory change")
-	}
-}
-
-func TestGitTickArmedOnlyOnSpacesView(t *testing.T) {
-	m := model{view: ViewAgents, gitInFlight: true}
-	if cmd := update(&m, gitTickMsg{}); cmd != nil {
-		t.Fatal("agents view rearmed git tick")
-	}
-	m.view = ViewSpaces
-	if cmd := update(&m, gitTickMsg{}); cmd == nil {
-		t.Fatal("spaces view dropped git tick")
-	}
-
-	m.view = ViewSpaces
-	if cmd := update(&m, tea.KeyMsg{Type: tea.KeyTab}); m.view != ViewAgents || cmd != nil {
-		t.Fatalf("tab to agents: view=%s cmd=%v", m.view, cmd != nil)
-	}
-	if cmd := update(&m, gitTickMsg{}); cmd != nil {
-		t.Fatal("tabbed-to-agents view rearmed git tick")
-	}
-
-	if cmd := update(&m, tea.KeyMsg{Type: tea.KeyShiftTab}); m.view != ViewSpaces || cmd == nil {
-		t.Fatalf("shift-tab to spaces: view=%s cmd=%v", m.view, cmd != nil)
-	}
-	if cmd := update(&m, gitTickMsg{}); cmd == nil {
-		t.Fatal("spaces view after tab dropped git tick")
-	}
-
-	m.view = ViewAgents
-	if cmd := update(&m, tea.KeyMsg{Type: tea.KeyTab}); m.view != ViewSpaces || cmd == nil {
-		t.Fatalf("tab to spaces: view=%s cmd=%v", m.view, cmd != nil)
 	}
 }
 

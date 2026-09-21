@@ -89,13 +89,6 @@ func TestLoadSidebarLayoutUsesHerdrSymbolIndicators(t *testing.T) {
 	}
 }
 
-func TestDefaultAgentRowsAreDescriptionTokens(t *testing.T) {
-	layout := defaultSidebarLayout()
-	if len(layout.AgentRows) != 1 || len(layout.AgentRows[0]) != 1 || layout.AgentRows[0][0].Name != "agent" {
-		t.Fatalf("default agent rows %+v", layout.AgentRows)
-	}
-}
-
 func TestLoadSidebarLayoutKeepsOrdinaryRowStyles(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")

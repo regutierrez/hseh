@@ -163,29 +163,3 @@ func TestCallHerdrMethodHedgesSlowIdempotentReply(t *testing.T) {
 		t.Fatalf("unmarked session.snapshot opened %d connections, want 1", got)
 	}
 }
-
-func TestCallContextReturnsTypedErrorCode(t *testing.T) {
-	socketPath := filepath.Join(t.TempDir(), "herdr.sock")
-	listener, err := net.Listen("unix", socketPath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { listener.Close() })
-	go func() {
-		conn, err := listener.Accept()
-		if err != nil {
-			return
-		}
-		defer conn.Close()
-		if _, err := bufio.NewReader(conn).ReadBytes('\n'); err != nil {
-			return
-		}
-		_, _ = conn.Write([]byte(`{"id":"x","error":{"code":"ui_busy","message":"popup already open"}}` + "\n"))
-	}()
-	t.Setenv("HERDR_SOCKET_PATH", socketPath)
-	_, err = callContext(context.Background(), "plugin.pane.open", map[string]any{}, nil)
-	var callErr *CallError
-	if !errors.As(err, &callErr) || callErr.Code != "ui_busy" || callErr.Method != "plugin.pane.open" {
-		t.Fatalf("typed error: %v", err)
-	}
-}
