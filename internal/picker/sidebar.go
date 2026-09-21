@@ -56,7 +56,7 @@ type herdrSidebarFile struct {
 
 func defaultSidebarLayout() sidebarLayout {
 	return sidebarLayout{
-		AgentRows:        tokensFromNames([][]string{{"state_icon", "machine", "workspace", "tab"}, {"agent"}}),
+		AgentRows:        tokensFromNames([][]string{{"agent"}}),
 		AgentRowsByAgent: map[string][][]sidebarToken{},
 		StatusIndicators: "dots",
 	}
@@ -361,7 +361,7 @@ func asciiLower(b byte) byte {
 }
 
 func applySidebarRules(token sidebarToken, value string) (sidebarToken, bool) {
-	if token.Name == "state_icon" || token.Name == "git_status" || len(token.Rules) == 0 {
+	if token.Name == "state_icon" || len(token.Rules) == 0 {
 		return token, false
 	}
 	var numeric optionalFloat

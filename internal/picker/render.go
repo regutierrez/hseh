@@ -16,7 +16,6 @@ const tabRows = 1
 const searchRows = 3
 const footerRows = 1
 
-// Layout minimums. Side-by-side needs room for both panes; stacked needs a few list rows plus a short preview.
 const (
 	minListWidth       = 20
 	minPreviewWidth    = 20
@@ -151,7 +150,6 @@ func (m model) renderTabs() string {
 	return applySurface(strings.Join(tabs, " "), th.panelFill(), m.width)
 }
 
-// searchBoxLines draws the rounded Search box, prompt, caret, and matched/total count.
 func (m model) searchBoxLines(width, height int) []string {
 	th := m.th()
 	boxColor := th.Accent
@@ -216,7 +214,6 @@ func searchHorizontalBorder(color, left, right string, inner int, title string, 
 	return padDisplayWidth(color+b.String()+"\x1b[0m", width)
 }
 
-// searchInputLine always shows the query; errors live in the footer, never here.
 func (m model) searchInputLine(width int) string {
 	if width < 1 {
 		return ""
@@ -280,7 +277,6 @@ func (m model) searchInputLine(width int) string {
 	return padDisplayWidth(b.String(), width)
 }
 
-// clipSearchTail keeps the end of the query visible when it outgrows the input width.
 func clipSearchTail(s string, width int) string {
 	if width < 1 || s == "" {
 		return ""
@@ -296,8 +292,6 @@ func clipSearchTail(s string, width int) string {
 	return string(runes[start:])
 }
 
-// renderFooter shows key help, plus a status. Errors are primary and win over help when
-// space is tight; a secondary informational status is dropped before key help.
 func (m model) renderFooter(width int) string {
 	if width < 1 {
 		return ""
@@ -417,8 +411,6 @@ func (m model) emptyListCopy() string {
 	}
 }
 
-// wrapItemBlock wraps one item's display rows to the content width, highlighting query
-// matches and, for the selected item, emboldening the primary row.
 func (m model) wrapItemBlock(item Item, selected bool, contentWidth int) []string {
 	if contentWidth < pathColumnMinWidth {
 		item = item.withoutPathColumn()
@@ -657,8 +649,6 @@ func applySurfaceBlock(text, bg string, width, height int) string {
 	return strings.Join(lines, "\n")
 }
 
-// colorListing strips eza/builtin SGR and paints names with Herdr tokens.
-// Directory rows (trailing / from builtin or eza -F) use blue; everything else uses text.
 func colorListing(text string, th colorTheme) string {
 	th = themeOrDefault(th)
 	if text == "" {
@@ -682,8 +672,6 @@ func colorListing(text string, th colorTheme) string {
 	return strings.Join(lines, "\n")
 }
 
-// clipLivePreview preserves terminal rows and shows their bottom edge, rather than reflowing a terminal grid.
-// The text is already control-filtered by the pane reader; only SGR sequences remain.
 func clipLivePreview(text string, width, height int) string {
 	width, height = max(1, width), max(1, height)
 	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
@@ -700,7 +688,6 @@ func clipLivePreview(text string, width, height int) string {
 	return joinPaddedRows(visible, width, height)
 }
 
-// clipListing shows the top of a directory listing and truncates long entries instead of wrapping them.
 func clipListing(text string, width, height int) string {
 	width, height = max(1, width), max(1, height)
 	lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
@@ -724,16 +711,12 @@ func continueSGR(carry, line string) string {
 	return carry
 }
 
-// emboldenAfterResets makes a styled row bold without erasing its own colors.
 func emboldenAfterResets(line string) string {
 	line = strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m\x1b[1m")
 	line = strings.ReplaceAll(line, "\x1b[m", "\x1b[m\x1b[1m")
 	return "\x1b[1m" + line
 }
 
-// highlightItemRows returns display rows with query matches highlighted. Fuzzy match
-// offsets map onto plain rows; when a display row's visible text diverges from its
-// plain row, the whole query is highlighted as a case-insensitive substring instead.
 func highlightItemRows(item Item, query, style string) []string {
 	rows := item.DisplayRows
 	if len(rows) == 0 {
@@ -759,7 +742,6 @@ func highlightItemRows(item Item, query, style string) []string {
 	return out
 }
 
-// matchedRunesByRow converts SearchText byte offsets into per-row visible rune indexes.
 func matchedRunesByRow(item Item, rowCount int) []map[int]bool {
 	perRow := make([]map[int]bool, rowCount)
 	if len(item.Matches) == 0 || len(item.Rows) == 0 {
@@ -807,8 +789,6 @@ func substringRuneMatches(plain, query string) map[int]bool {
 	return set
 }
 
-// highlightVisibleRunes styles the visible runes at the given indexes, keeping existing SGR
-// state by replaying it after each highlighted rune.
 func highlightVisibleRunes(line string, set map[int]bool, style string) string {
 	var b strings.Builder
 	b.Grow(len(line) + 16*len(set))

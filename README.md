@@ -92,20 +92,28 @@ show their `working_dir`. the path column disappears when the list is narrower
 than 45 cells, and a row that still does not fit is cut, not wrapped.
 
 the preview lists that directory with
-`eza --icons=always --color=always --group-directories-first -a` when `eza` is
-on `PATH` (optional; install it for icons and colors), otherwise a plain builtin
-listing. the listing is read once per selection and never polls. agents keep
-their live pane preview.
+`eza --icons=always --color=never --group-directories-first -a -F` when `eza` is
+on `PATH` (optional; install it for icons), otherwise a plain builtin listing.
+color comes from herdr tokens, not eza; `-F` marks directories with a trailing
+`/` so the picker can paint them. the listing is read once per selection and
+never polls. agents keep their live pane preview.
 
 ## measuring speed
 
-set `HSEH_TRACE` to a file path and hseh appends one line per timed event
-(socket calls, git status, preview reads, update/view durations, and first-time
-startup milestones). unset, the hooks cost nothing. put it in your shell profile
-or herdr's env so popups inherit it:
+for a local `./hseh`, set `HSEH_TRACE` to a file path and hseh appends one line
+per timed event (socket calls, git status, preview reads, update/view
+durations, and first-time startup milestones). unset, the hooks cost nothing:
 
 ```sh
 export HSEH_TRACE=/tmp/hseh.trace
+```
+
+herdr-spawned popup and action processes do not inherit `HSEH_TRACE`. put the
+path in `hseh.toml` instead (`trace.Enabled` reads `config.Load().TraceFile`):
+
+```toml
+# ~/.config/herdr/plugins/config/hseh/hseh.toml
+trace_file = "/tmp/hseh.trace"
 ```
 
 useful summaries:
@@ -114,14 +122,6 @@ useful summaries:
 grep milestone /tmp/hseh.trace              # time to list, time to preview
 grep socket.call /tmp/hseh.trace | sort -t= -k2 -n | tail   # slowest herdr round trips
 grep git.status /tmp/hseh.trace | sort -t= -k2 -n | tail    # slowest repos
-```
-
-herdr spawns plugin processes with its own environment, so `HSEH_TRACE` does
-not reach popups. put the path in the plugin config instead:
-
-```toml
-# ~/.config/herdr/plugins/config/hseh/hseh.toml
-trace_file = "/tmp/hseh.trace"
 ```
 
 `process.start` carries `since_exec_ms` (time spent before `main`, which is

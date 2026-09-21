@@ -141,8 +141,7 @@ func LoadReconciledAssociationState(stateDir string, live herdr.ContinuityWitnes
 	return reconcileAssociationState(state, live), nil
 }
 
-// RecoverUsage is the `hseh recover` argument contract, shared by the CLI parser and Recover.
-const RecoverUsage = "exactly one of --workspace <live-workspace-id> or --create is required"
+const recoverUsage = "exactly one of --workspace <live-workspace-id> or --create is required"
 
 // RecoveryHintLines is the tag plus the exact commands that resolve a stale identity.
 func RecoveryHintLines(definitionID string) []string {

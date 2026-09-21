@@ -49,3 +49,10 @@ func TestStripControlsRemovesSGR(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestSanitizeDisplayTextTrimsAndStrips(t *testing.T) {
+	got := SanitizeDisplayText("  a\x1b[31mx\x1b[0m  ")
+	if got != "ax" {
+		t.Fatalf("got %q", got)
+	}
+}

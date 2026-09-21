@@ -89,12 +89,19 @@ func TestLoadSidebarLayoutUsesHerdrSymbolIndicators(t *testing.T) {
 	}
 }
 
+func TestDefaultAgentRowsAreDescriptionTokens(t *testing.T) {
+	layout := defaultSidebarLayout()
+	if len(layout.AgentRows) != 1 || len(layout.AgentRows[0]) != 1 || layout.AgentRows[0][0].Name != "agent" {
+		t.Fatalf("default agent rows %+v", layout.AgentRows)
+	}
+}
+
 func TestLoadSidebarLayoutKeepsOrdinaryRowStyles(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.toml")
 	body := `
 [ui.sidebar.agents]
-rows = [["state_icon", "workspace", "tab"], [{ token = "workspace", fg = "#89b4fa", bold = true }]]
+rows = [[{ token = "workspace", fg = "#89b4fa", bold = true }]]
 `
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
 		t.Fatal(err)
@@ -103,7 +110,7 @@ rows = [["state_icon", "workspace", "tab"], [{ token = "workspace", fg = "#89b4f
 	if len(errs) != 0 {
 		t.Fatalf("%v", errs)
 	}
-	if len(layout.AgentRows) != 2 || !layout.AgentRows[1][0].Styled || layout.AgentRows[1][0].Fg != "#89b4fa" {
+	if len(layout.AgentRows) != 1 || !layout.AgentRows[0][0].Styled || layout.AgentRows[0][0].Fg != "#89b4fa" {
 		t.Fatalf("style dropped: %+v", layout.AgentRows)
 	}
 	items := buildItemsWithLayout("agents", herdr.SessionSnapshot{
@@ -124,7 +131,6 @@ func TestSidebarRulesColorAndHide(t *testing.T) {
 	body := `
 [ui.sidebar.agents]
 rows = [
-  ["state_icon", "workspace"],
   [
     { token = "agent", fg = "#ffffff", rules = [{ equals = "hide-me", hide = true }, { contains = "pi", ignore_case = true, fg = "#ff0000", bold = true }] },
     { token = "$load", rules = [{ gt = 80, fg = "#00ff00" }] },
@@ -138,26 +144,26 @@ rows = [
 	if len(errs) != 0 {
 		t.Fatalf("%v", errs)
 	}
-	if len(layout.AgentRows) != 2 || len(layout.AgentRows[1][0].Rules) != 2 {
+	if len(layout.AgentRows) != 1 || len(layout.AgentRows[0][0].Rules) != 2 {
 		t.Fatalf("rules not parsed: %+v", layout.AgentRows)
 	}
-	agent, hidden := applySidebarRules(layout.AgentRows[1][0], "PI-bot")
+	agent, hidden := applySidebarRules(layout.AgentRows[0][0], "PI-bot")
 	if hidden || agent.Fg != "#ff0000" || !agent.Bold {
 		t.Fatalf("contains rule: %+v hide=%v", agent, hidden)
 	}
-	load, hidden := applySidebarRules(layout.AgentRows[1][1], "90")
+	load, hidden := applySidebarRules(layout.AgentRows[0][1], "90")
 	if hidden || load.Fg != "#00ff00" {
 		t.Fatalf("gt rule: %+v hide=%v", load, hidden)
 	}
-	_, hidden = applySidebarRules(layout.AgentRows[1][0], "hide-me")
+	_, hidden = applySidebarRules(layout.AgentRows[0][0], "hide-me")
 	if !hidden {
 		t.Fatal("hide rule did not match")
 	}
-	plain, _ := renderSidebarRows(layout.AgentRows[1:], map[string]string{"agent": "hide-me", "$load": "90"}, "idle", colorTheme{})
+	plain, _ := renderSidebarRows(layout.AgentRows, map[string]string{"agent": "hide-me", "$load": "90"}, "idle", colorTheme{})
 	if len(plain) != 1 || plain[0] != "90" {
 		t.Fatalf("hide not applied: %q", plain)
 	}
-	gone, _ := renderSidebarRows(layout.AgentRows[1:], map[string]string{"agent": "hide-me"}, "idle", colorTheme{})
+	gone, _ := renderSidebarRows(layout.AgentRows, map[string]string{"agent": "hide-me"}, "idle", colorTheme{})
 	if len(gone) != 0 {
 		t.Fatalf("hidden row remained: %q", gone)
 	}

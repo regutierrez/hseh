@@ -2,6 +2,7 @@ package herdr
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -161,7 +162,8 @@ func OpenPluginPopup(view string) error {
 	if err != nil {
 		// The hedged duplicate of this request, or a repeated keypress, finds the
 		// popup already open. Either way the popup the user asked for is on screen.
-		if strings.Contains(err.Error(), "ui_busy") {
+		var callErr *CallError
+		if errors.As(err, &callErr) && callErr.Code == "ui_busy" {
 			return nil
 		}
 		return err

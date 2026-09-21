@@ -26,7 +26,6 @@ type OpenResult struct {
 	DefinitionID string
 }
 
-// loadDefinition finds one definition by id; cmd names the command for error messages.
 func loadDefinition(cmd, definitionID string) (Definition, error) {
 	defs, errs := LoadDefinitions(config.SpaceDefinitionsDir())
 	def, ok := findDefinitionByID(defs, definitionID)
@@ -49,65 +48,48 @@ func withOpenLock(ctx context.Context, fn func() (OpenResult, error)) (OpenResul
 	return result, err
 }
 
-func workspaceGitCheckoutDir(workspace herdr.WorkspaceRow) string {
-	if workspace.Worktree == nil {
-		return ""
-	}
-	path := strings.TrimSpace(workspace.Worktree.CheckoutPath)
-	if path == "" {
-		return ""
-	}
-	canonical, err := canonicalizeDirPath(path)
-	if err != nil {
-		return ""
-	}
-	return canonical
-}
-
-func workspaceUniformPaneDir(snapshot herdr.SessionSnapshot, workspaceID string) (string, bool) {
-	var dir string
-	found := false
-	for _, pane := range snapshot.Panes {
-		if pane.WorkspaceID != workspaceID {
-			continue
-		}
-		raw := strings.TrimSpace(pane.Cwd)
-		if raw == "" {
-			return "", false
-		}
-		canonical, err := canonicalizeDirPath(raw)
-		if err != nil {
-			return "", false
-		}
-		if !found {
-			dir = canonical
-			found = true
-			continue
-		}
-		if canonical != dir {
-			return "", false
-		}
-	}
-	if !found {
-		return "", false
-	}
-	return dir, true
-}
-
-func workspaceDirectorySignal(snapshot herdr.SessionSnapshot, workspace herdr.WorkspaceRow) (string, bool) {
-	if checkout := workspaceGitCheckoutDir(workspace); checkout != "" {
-		return checkout, true
-	}
-	return workspaceUniformPaneDir(snapshot, workspace.WorkspaceID)
-}
-
 func eligibleAdoptionWorkspaceIDs(snapshot herdr.SessionSnapshot, history focus.History, state AssociationState, identity AssociationRecord) []string {
 	var eligible []string
 	for _, workspace := range snapshot.Workspaces {
 		if workspaceAssociatedToOtherDefinition(state, workspace.WorkspaceID, identity) {
 			continue
 		}
-		dir, ok := workspaceDirectorySignal(snapshot, workspace)
+		dir, ok := "", false
+		if workspace.Worktree != nil {
+			if path := strings.TrimSpace(workspace.Worktree.CheckoutPath); path != "" {
+				if canonical, err := canonicalizeDirPath(path); err == nil {
+					dir, ok = canonical, true
+				}
+			}
+		}
+		if !ok {
+			found := false
+			for _, pane := range snapshot.Panes {
+				if pane.WorkspaceID != workspace.WorkspaceID {
+					continue
+				}
+				raw := strings.TrimSpace(pane.Cwd)
+				if raw == "" {
+					found = false
+					break
+				}
+				canonical, err := canonicalizeDirPath(raw)
+				if err != nil {
+					found = false
+					break
+				}
+				if !found {
+					dir = canonical
+					found = true
+					continue
+				}
+				if canonical != dir {
+					found = false
+					break
+				}
+			}
+			ok = found
+		}
 		if !ok || dir != identity.ResolvedDir {
 			continue
 		}
