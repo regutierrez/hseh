@@ -283,7 +283,7 @@ func TestCompiledListShowsRecoveryWhileLiveItemsRemain(t *testing.T) {
 	socket, state := hsehtest.Start(t, h)
 	seedStaleAssociation(t, socket, state, 8, space.AssociationRecord{DefinitionID: "def-a", ResolvedDir: dirA, WorkspaceID: "w1"})
 	env := hsehtest.Env(socket, state, config)
-	out, err := runCompiledHseh(env, "list", "--json")
+	out, err := runCompiledHseh(env, "list")
 	if err != nil {
 		t.Fatalf("list: %v %s", err, out)
 	}
