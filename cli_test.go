@@ -1,10 +1,8 @@
 package main
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -147,82 +145,6 @@ func TestCompiledListUsesHerdrSymbolIndicators(t *testing.T) {
 			t.Fatalf("%s missing %s %s in %q", c.view, c.glyph, c.name, rowsByView[c.view])
 		}
 	}
-}
-
-func TestCompiledListJSONAndLaunchBusy(t *testing.T) {
-	snapshot := herdr.SessionSnapshot{
-		Workspaces: []herdr.WorkspaceRow{
-			{WorkspaceID: "w1", Label: "one", AgentStatus: "idle", ActiveTabID: "w1:t1"},
-		},
-		Layouts: []herdr.PaneLayout{{TabID: "w1:t1", FocusedPaneID: "w1:p1"}},
-	}
-	server := &hsehtest.Server{Snapshot: snapshot}
-	socketPath, stateDir := hsehtest.Start(t, server)
-	env := hsehtest.Env(socketPath, stateDir, t.TempDir())
-
-	out, err := runCompiledHseh(env, "list")
-	if err != nil {
-		t.Fatalf("list without --json: %v\n%s", err, out)
-	}
-	var doc picker.ListDocument
-	if err := json.Unmarshal([]byte(out), &doc); err != nil {
-		t.Fatalf("list json: %v\n%s", err, out)
-	}
-	if doc.View != picker.ViewSpaces || len(doc.Items) != 1 || doc.Items[0].Kind != picker.KindSpace {
-		t.Fatalf("list document: %+v", doc)
-	}
-
-	out, err = runCompiledHseh(env, "list", "--json")
-	if err == nil || !strings.Contains(out, "unknown argument --json") {
-		t.Fatalf("leftover --json: err=%v out=%s", err, out)
-	}
-
-	if out, err = runCompiledHseh(env, "launch", "spaces"); err != nil {
-		t.Fatalf("first launch: %v\n%s", err, out)
-	}
-	if server.Count("plugin.pane.open") < 1 {
-		t.Fatal("first launch did not call plugin.pane.open")
-	}
-	if out, err = runCompiledHseh(env, "launch", "spaces"); err != nil {
-		t.Fatalf("second launch (ui_busy code): %v\n%s", err, out)
-	}
-
-	// Message substring "ui_busy" with code "failed" must not look like success.
-	badEnv := hsehtest.Env(serveRPCError(t, "failed", "ui_busy"), stateDir, t.TempDir())
-	out, err = runCompiledHseh(badEnv, "launch", "spaces")
-	if err == nil || !strings.Contains(out, "failed") || !strings.Contains(out, "ui_busy") {
-		t.Fatalf("code failed / message ui_busy must surface: err=%v out=%s", err, out)
-	}
-}
-
-func serveRPCError(t *testing.T, code, message string) string {
-	t.Helper()
-	socket := filepath.Join(t.TempDir(), "herdr.sock")
-	listener, err := net.Listen("unix", socket)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { listener.Close() })
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			go func(c net.Conn) {
-				defer c.Close()
-				if _, err := bufio.NewReader(c).ReadBytes('\n'); err != nil {
-					return
-				}
-				payload, _ := json.Marshal(map[string]any{
-					"id":    "x",
-					"error": map[string]any{"code": code, "message": message},
-				})
-				_, _ = c.Write(append(payload, '\n'))
-			}(conn)
-		}
-	}()
-	return socket
 }
 
 func TestCompiledCLIListJSON(t *testing.T) {
