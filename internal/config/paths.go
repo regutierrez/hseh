@@ -38,9 +38,9 @@ func StateDir() string {
 	return filepath.Join(xdgStateHome(), "herdr", "plugins", PluginID())
 }
 
-// ConfigDir is Herdr's managed plugin config, the same directory plugin
+// configDir is Herdr's managed plugin config, the same directory plugin
 // popup/action commands receive as HERDR_PLUGIN_CONFIG_DIR.
-func ConfigDir() string {
+func configDir() string {
 	if dir := os.Getenv("HERDR_PLUGIN_CONFIG_DIR"); dir != "" {
 		return dir
 	}
@@ -48,7 +48,7 @@ func ConfigDir() string {
 }
 
 func SpaceDefinitionsDir() string {
-	return filepath.Join(ConfigDir(), "spaces")
+	return filepath.Join(configDir(), "spaces")
 }
 
 // SessionName is the Herdr session hseh runs in: HERDR_SESSION, else the
@@ -111,7 +111,6 @@ func HerdrConfigPath() string {
 	return filepath.Join(xdgConfigHome(), "herdr", "config.toml")
 }
 
-// SocketPath is the current session's API socket, handed to plugin processes as HERDR_SOCKET_PATH.
 func SocketPath() string {
 	return os.Getenv("HERDR_SOCKET_PATH")
 }
