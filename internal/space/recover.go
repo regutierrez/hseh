@@ -18,7 +18,7 @@ func Recover(ctx context.Context, definitionID, workspaceID string, create bool)
 		return OpenResult{}, fmt.Errorf("hseh recover: definition id is required")
 	}
 	if create == (workspaceID != "") {
-		return OpenResult{}, fmt.Errorf("hseh recover: %s", RecoverUsage)
+		return OpenResult{}, fmt.Errorf("hseh recover: %s", recoverUsage)
 	}
 	return withOpenLock(ctx, func() (OpenResult, error) { return recoverLocked(ctx, definitionID, workspaceID, create) })
 }

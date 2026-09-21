@@ -16,6 +16,10 @@ func StripControls(input string) string {
 	return filterTerminalBytes(input, false)
 }
 
+func SanitizeDisplayText(value string) string {
+	return strings.TrimSpace(StripControls(value))
+}
+
 func filterTerminalBytes(input string, keepSGR bool) string {
 	var out strings.Builder
 	out.Grow(len(input))
