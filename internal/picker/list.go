@@ -52,7 +52,7 @@ func assembleItems(view string, live liveState, layout sidebarLayout, definition
 	return appendUnopenedDefinitionItems(items, view, live.snapshot, definitions, live.records, live.unresolved, git, th)
 }
 
-// LoadListDocument assembles the rows the popup would show, for `hseh list --json`.
+// LoadListDocument assembles the rows the popup would show, for `hseh list`.
 func LoadListDocument(ctx context.Context, view string) (ListDocument, error) {
 	view, err := ParseView(view)
 	if err != nil {

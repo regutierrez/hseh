@@ -447,7 +447,6 @@ func TestThemeResolution(t *testing.T) {
 	}
 }
 
-// burstPreviewReader blocks until cancelled or a short delay, counting outcomes.
 type burstPreviewReader struct {
 	cancelled atomic.Int32
 	completed atomic.Int32
@@ -476,7 +475,6 @@ func burstModel() model {
 	return m
 }
 
-// runPreviewBurst navigates 8 times quickly, then drains every command. Exactly one read survives.
 func runPreviewBurst(m model) (model, *burstPreviewReader) {
 	reader := &burstPreviewReader{delay: 5 * time.Millisecond}
 	m.readPane = reader.read
@@ -541,7 +539,6 @@ func BenchmarkRenderVisibleWindow(b *testing.B) {
 	}
 }
 
-// realisticModel mirrors a live session: a handful of rows, a live preview frame, side-by-side layout.
 func realisticModel() model {
 	m := model{width: 170, height: 40, widePreviewMinCols: 100, snapshotReady: true, catalogReady: true, theme: terminalTheme()}
 	m.allItems = benchmarkItems(12)

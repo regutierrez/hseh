@@ -11,7 +11,6 @@ import (
 	"github.com/regutierrez/hseh/internal/termtext"
 )
 
-// hasRailSelectedLabel reports whether a rendered line carrying the label starts with the selection rail.
 func hasRailSelectedLabel(view, label string) bool {
 	for _, line := range strings.Split(view, "\n") {
 		plain := termtext.StripControls(line)

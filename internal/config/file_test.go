@@ -58,7 +58,7 @@ func TestPopupSizeInvalidFallsBackPerDimension(t *testing.T) {
 		if len(errs) != 1 || !strings.Contains(errs[0], want) {
 			t.Fatalf("%q: errs %v, want one mentioning %q", body, errs, want)
 		}
-		if settings.PopupWidth != DefaultPopupWidth {
+		if settings.PopupWidth != defaultPopupWidth {
 			t.Fatalf("%q: invalid width did not fall back: %v", body, settings.PopupWidth)
 		}
 		if settings.PopupHeight.Param() != "50%" {

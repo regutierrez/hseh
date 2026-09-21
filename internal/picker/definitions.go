@@ -8,6 +8,7 @@ import (
 	"github.com/regutierrez/hseh/internal/gitinfo"
 	"github.com/regutierrez/hseh/internal/herdr"
 	"github.com/regutierrez/hseh/internal/space"
+	"github.com/regutierrez/hseh/internal/termtext"
 )
 
 func selectionID(kind, target string) string {
@@ -15,11 +16,11 @@ func selectionID(kind, target string) string {
 }
 
 func definitionItem(def space.Definition, needsRecovery bool, git gitinfo.WorkspaceGit, th colorTheme) Item {
-	name := space.SanitizeDisplayText(def.Name)
-	desc := space.SanitizeDisplayText(def.Description)
-	dir := space.SanitizeDisplayText(def.ResolvedDir)
+	name := termtext.SanitizeDisplayText(def.Name)
+	desc := termtext.SanitizeDisplayText(def.Description)
+	dir := termtext.SanitizeDisplayText(def.ResolvedDir)
 	if dir == "" {
-		dir = space.SanitizeDisplayText(def.WorkingDir)
+		dir = termtext.SanitizeDisplayText(def.WorkingDir)
 	}
 	row := spaceRow{source: SourceTemplate, name: name, git: git, path: dir}
 	var recovery []string
@@ -31,7 +32,7 @@ func definitionItem(def space.Definition, needsRecovery bool, git gitinfo.Worksp
 		preview = strings.Join(hints, "\n")
 	}
 	plain, display := renderSpaceRow(row, "", th) // templates carry no agent status
-	search := strings.Join([]string{plain, desc, space.SanitizeDisplayText(def.SourceFile), space.SanitizeDisplayText(filepath.Base(def.SourceFile))}, " ")
+	search := strings.Join([]string{plain, desc, termtext.SanitizeDisplayText(def.SourceFile), termtext.SanitizeDisplayText(filepath.Base(def.SourceFile))}, " ")
 	return Item{
 		Kind:         KindDefinition,
 		ID:           selectionID(KindDefinition, def.ID),

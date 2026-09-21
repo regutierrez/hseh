@@ -7,8 +7,6 @@ import (
 	"github.com/regutierrez/hseh/internal/space"
 )
 
-// newModel builds a model with snapshot, history and layout already in hand, so tests can
-// drive Update without the async first-snapshot round trip.
 func newModel(view string, snapshot herdr.SessionSnapshot, history focus.History, wideMin int) model {
 	history = focus.Prune(history, snapshot)
 	m := model{
@@ -25,7 +23,6 @@ func newModel(view string, snapshot herdr.SessionSnapshot, history focus.History
 	return m
 }
 
-// setSpaceCatalog installs reusable-space definitions and associations as catalogLoadedMsg would.
 func (m *model) setSpaceCatalog(definitions []space.Definition, records, unresolved []space.AssociationRecord, errs []string) {
 	m.definitions = definitions
 	m.associationRecords = records
@@ -36,7 +33,6 @@ func (m *model) setSpaceCatalog(definitions []space.Definition, records, unresol
 	m.rebuildVisible()
 }
 
-// flattenCmds executes a command tree (including tea.Batch) and returns the non-nil messages.
 func flattenCmds(cmd tea.Cmd) []tea.Msg {
 	if cmd == nil {
 		return nil
@@ -56,7 +52,6 @@ func flattenCmds(cmd tea.Cmd) []tea.Msg {
 	}
 }
 
-// feedCmd runs a command tree and feeds every produced message back into the model.
 func feedCmd(m model, cmd tea.Cmd) model {
 	for _, msg := range flattenCmds(cmd) {
 		next, _ := m.Update(msg)

@@ -35,7 +35,7 @@ func TestAgentDetailsUseHerdrDescriptionAndDirectory(t *testing.T) {
 	snapshot := herdr.SessionSnapshot{Workspaces: []herdr.WorkspaceRow{{WorkspaceID: "w1", Label: "Project"}}, Tabs: []herdr.TabRow{{TabID: "w1:t1", Label: "Implement"}}}
 	agent := herdr.AgentRow{PaneRow: herdr.PaneRow{WorkspaceID: "w1", TabID: "w1:t1", PaneID: "w1:p1", Agent: "pi", AgentStatus: "working", Cwd: filepath.Join(home, "code", "nested", "app"), DisplayAgent: "pi - Fix tests", Tokens: map[string]string{"name2": "keep details"}}}
 	layout := defaultSidebarLayout()
-	layout.AgentRows = tokensFromNames([][]string{{"state_icon", "workspace", "tab"}, {"agent"}, {"$name2"}})
+	layout.AgentRows = tokensFromNames([][]string{{"agent"}, {"$name2"}})
 	plain, display := renderAgentSidebarRows(snapshot, agent, layout, colorTheme{})
 	if len(plain) != 3 || !strings.Contains(plain[0], "\U000f03ff Implement") || plain[1] != "Project (~/…/app)" || plain[2] != "pi - Fix tests keep details" {
 		t.Fatalf("rows %+v", plain)
