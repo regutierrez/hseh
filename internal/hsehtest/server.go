@@ -43,6 +43,7 @@ type Server struct {
 	commands      []string
 	created       []string
 	popupOpens    []PopupOpen
+	popupOpen     bool
 	nextWorkspace int
 }
 
@@ -170,6 +171,12 @@ func (s *Server) serve(conn net.Conn) {
 		var params PopupOpen
 		_ = json.Unmarshal(req.Params, &params)
 		s.popupOpens = append(s.popupOpens, params)
+		if s.popupOpen {
+			payload, _ := json.Marshal(map[string]any{"id": req.ID, "error": map[string]any{"code": "ui_busy", "message": "popup already open"}})
+			_, _ = conn.Write(append(payload, '\n'))
+			return
+		}
+		s.popupOpen = true
 		result = map[string]any{"type": "ok"}
 	case "workspace.focus":
 		var params struct {
@@ -225,8 +232,12 @@ func (s *Server) serve(conn net.Conn) {
 		_ = json.Unmarshal(req.Params, &params)
 		s.commands = append(s.commands, params.Text)
 		result = map[string]any{"type": "ok"}
-	default:
+	case "tab.rename", "tab.close", "pane.rename":
 		result = map[string]any{"type": "ok"}
+	default:
+		payload, _ := json.Marshal(map[string]any{"id": req.ID, "error": map[string]any{"code": "unknown_method", "message": "unknown method " + req.Method}})
+		_, _ = conn.Write(append(payload, '\n'))
+		return
 	}
 	payload, _ := json.Marshal(map[string]any{"id": req.ID, "result": result})
 	_, _ = conn.Write(append(payload, '\n'))
