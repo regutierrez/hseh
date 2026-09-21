@@ -22,13 +22,11 @@ const (
 	ViewAgents     = "agents"
 )
 
-// Spaces rows carry a source badge: a live Herdr workspace or an unopened template.
 const (
 	SourceHerdr    = "herdr"
 	SourceTemplate = "template"
 )
 
-// Item is one flat picker row with a stable target id.
 type Item struct {
 	Kind         string `json:"kind"`
 	ID           string `json:"id"`
@@ -38,19 +36,16 @@ type Item struct {
 	Label        string `json:"label,omitempty"`
 	Status       string `json:"status,omitempty"`
 	// Source and Path are set on Spaces rows only. Path is absolute and is what the preview lists.
-	Source string `json:"source,omitempty"`
-	Path   string `json:"path,omitempty"`
-	// Recovery holds the exact `hseh recover` commands for an unresolved template; the popup shows them in the preview.
+	Source      string   `json:"source,omitempty"`
+	Path        string   `json:"path,omitempty"`
 	Recovery    []string `json:"recovery,omitempty"`
 	Rows        []string `json:"rows"`
 	DisplayRows []string `json:"-"`
 	SearchText  string   `json:"-"`
 	PreviewText string   `json:"-"`
-	// Matches are byte offsets into SearchText matched by the current query, used for highlighting.
-	Matches []int `json:"-"`
+	Matches     []int    `json:"-"`
 }
 
-// ListDocument is the public JSON listing shape.
 type ListDocument struct {
 	Session ListSession `json:"session"`
 	View    string      `json:"view"`
@@ -58,15 +53,11 @@ type ListDocument struct {
 	Errors  []string    `json:"errors,omitempty"`
 }
 
-// ListSession names the Herdr session the listing came from.
 type ListSession struct {
 	Name       string `json:"name"`
 	SocketPath string `json:"socket_path"`
 }
 
-// buildItemsWithLayout builds Spaces or Agents rows from the live snapshot plus history,
-// using the parsed sidebar layout for status glyphs and per-agent description rows.
-// git is keyed by active directory and only decorates Spaces rows.
 func buildItemsWithLayout(view string, snapshot herdr.SessionSnapshot, history focus.History, layout sidebarLayout, git map[string]gitinfo.WorkspaceGit, th colorTheme) []Item {
 	if view == ViewAgents {
 		return buildAgentItems(snapshot, history, layout, th)
@@ -273,11 +264,7 @@ func renderAgentSidebarRows(snapshot herdr.SessionSnapshot, agent herdr.AgentRow
 	if override, ok := layout.AgentRowsByAgent[agent.Agent]; ok {
 		rows = override
 	}
-	// Keep Herdr's configured description rows, including per-harness overrides and reported tokens.
-	var details []string
-	if len(rows) > 1 {
-		details, _ = renderSidebarRows(rows[1:], values, agent.AgentStatus, th)
-	}
+	details, _ := renderSidebarRows(rows, values, agent.AgentStatus, th)
 	th = themeOrDefault(th)
 	muted := th.Muted
 	prefix, styledPrefix := statePrefix(agent.AgentStatus, layout.StatusIndicators, th)
@@ -329,9 +316,6 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// filterItemsInto ranks matching items by fuzzy quality, then original order. It appends
-// to dst (reusing its backing array) and reuses the search-target scratch slice so
-// per-keystroke filtering does not reallocate.
 func filterItemsInto(dst []Item, scratch []string, items []Item, query string) ([]Item, []string) {
 	query = strings.TrimSpace(query)
 	dst = dst[:0]
@@ -346,14 +330,7 @@ func filterItemsInto(dst []Item, scratch []string, items []Item, query string) (
 	for _, item := range items {
 		scratch = append(scratch, item.SearchText)
 	}
-	matches := fuzzy.Find(query, scratch)
-	sort.SliceStable(matches, func(i, j int) bool {
-		if matches[i].Score != matches[j].Score {
-			return matches[i].Score > matches[j].Score
-		}
-		return matches[i].Index < matches[j].Index
-	})
-	for _, match := range matches {
+	for _, match := range fuzzy.Find(query, scratch) {
 		item := items[match.Index]
 		item.Matches = match.MatchedIndexes
 		dst = append(dst, item)
