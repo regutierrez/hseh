@@ -25,7 +25,8 @@ func Read(ctx context.Context, dir string) WorkspaceGit {
 		return WorkspaceGit{}
 	}
 	span := trace.Span("git.status", "dir", dir)
-	defer span()
+	var more []any
+	defer func() { span(more...) }()
 	root, ok := readRoot(ctx, dir)
 	if !ok {
 		return WorkspaceGit{}
@@ -36,7 +37,7 @@ func Read(ctx context.Context, dir string) WorkspaceGit {
 		if ctx.Err() != nil {
 			return WorkspaceGit{}
 		}
-		span("err", err)
+		more = []any{"err", err}
 		return WorkspaceGit{Status: "git status unavailable", Root: root}
 	}
 	result := parseStatus(string(output))
