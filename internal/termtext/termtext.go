@@ -6,7 +6,7 @@ import (
 )
 
 // KeepSGR keeps SGR color sequences and drops cursor, OSC,
-// clipboard, C1, and other terminal-control effects. This is not a terminal emulator.
+// clipboard, C1, and other terminal-control effects.
 func KeepSGR(input string) string {
 	return filterTerminalBytes(input, true)
 }
