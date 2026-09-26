@@ -26,14 +26,6 @@ herdr plugin link "$PWD"
 
 then `herdr plugin action invoke hseh.spaces`
 
-enable the commit hooks once per clone:
-
-```sh
-git config core.hooksPath .githooks
-```
-
-`.githooks/commit-msg` and `.githooks/prepare-commit-msg` strip Cursor attribution trailers. if the author or committer is a Cursor Agent / `cursoragent@cursor.com`, they write `user`/`author`/`committer` git config to `regutierrez <rpegutierrez@gmail.com>` for later commits; they do not rewrite the commit that is running the hook.
-
 tab changes view. enter switches. esc cancels.
 
 ## layout
