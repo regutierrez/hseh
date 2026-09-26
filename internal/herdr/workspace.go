@@ -7,7 +7,6 @@ import (
 )
 
 type workspaceCreatedEnvelope struct {
-	Type      string `json:"type"`
 	Workspace struct {
 		WorkspaceID string `json:"workspace_id"`
 	} `json:"workspace"`
@@ -20,8 +19,7 @@ type workspaceCreatedEnvelope struct {
 }
 
 type tabCreatedEnvelope struct {
-	Type string `json:"type"`
-	Tab  struct {
+	Tab struct {
 		TabID string `json:"tab_id"`
 	} `json:"tab"`
 	RootPane struct {
@@ -30,7 +28,6 @@ type tabCreatedEnvelope struct {
 }
 
 type paneSplitEnvelope struct {
-	Type string `json:"type"`
 	Pane struct {
 		PaneID string `json:"pane_id"`
 	} `json:"pane"`

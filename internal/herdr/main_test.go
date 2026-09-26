@@ -1,9 +1,17 @@
-package herdr_test
+package herdr
 
 import (
+	"os"
 	"testing"
-
-	"github.com/regutierrez/hseh/internal/hsehtest"
 )
 
-func TestMain(m *testing.M) { hsehtest.Main(m) }
+func TestMain(m *testing.M) {
+	dir, err := os.MkdirTemp("", "hseh-test-config-")
+	if err != nil {
+		panic(err)
+	}
+	os.Setenv("HERDR_PLUGIN_CONFIG_DIR", dir)
+	code := m.Run()
+	os.RemoveAll(dir)
+	os.Exit(code)
+}

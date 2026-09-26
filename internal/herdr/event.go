@@ -34,7 +34,6 @@ func PluginEventFromEnv() (name string, data PluginEventData, err error) {
 	return name, data, err
 }
 
-// parsePluginEventJSON decodes the data member of a plugin event envelope.
 func parsePluginEventJSON(raw string) (PluginEventData, error) {
 	var envelope struct {
 		Data json.RawMessage `json:"data"`

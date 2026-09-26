@@ -24,7 +24,6 @@ func (id AgentLiveID) String() string {
 	return fmt.Sprintf("%s#%d", id.PaneID, id.Generation)
 }
 
-// PaneOccupant is the verified agent occupant of one pane.
 type PaneOccupant struct {
 	Generation   int    `json:"generation"`
 	AgentKind    string `json:"agent_kind"`
@@ -101,6 +100,7 @@ func WriteFile(stateDir string, history History) error {
 		return fmt.Errorf("hseh history: write: %w", err)
 	}
 	if err := os.Rename(temporaryPath, historyStatePath(stateDir)); err != nil {
+		_ = os.Remove(temporaryPath)
 		return fmt.Errorf("hseh history: rename: %w", err)
 	}
 	return nil
@@ -110,7 +110,6 @@ func withLock(stateDir string, fn func() error) error {
 	return lockfile.WithExclusive(historyLockPath(stateDir), fn)
 }
 
-// update applies fn to the witness-checked history under the session lock and persists the result.
 func update(stateDir string, witness herdr.ContinuityWitness, fn func(History) History) (History, error) {
 	var history History
 	err := withLock(stateDir, func() error {
@@ -255,7 +254,6 @@ func recordWorkspaceFocus(history History, workspaceID string) History {
 	return history
 }
 
-// removeWorkspace drops a closed space from history.
 func removeWorkspace(history History, workspaceID string) History {
 	history.Spaces = removeString(history.Spaces, workspaceID)
 	history.Pending = removeString(history.Pending, workspaceID)
