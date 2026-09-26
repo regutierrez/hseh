@@ -14,7 +14,6 @@ type AgentSession struct {
 	Value string `json:"value"`
 }
 
-// WorkspaceRow is one live workspace from session.snapshot.
 type WorkspaceRow struct {
 	WorkspaceID string    `json:"workspace_id"`
 	Label       string    `json:"label"`
@@ -29,13 +28,11 @@ type Worktree struct {
 	CheckoutPath string `json:"checkout_path"`
 }
 
-// TabRow is one live tab from session.snapshot.
 type TabRow struct {
 	TabID string `json:"tab_id"`
 	Label string `json:"label"`
 }
 
-// PaneRow is one live pane from session.snapshot.
 type PaneRow struct {
 	PaneID        string            `json:"pane_id"`
 	WorkspaceID   string            `json:"workspace_id"`
@@ -54,7 +51,6 @@ type PaneRow struct {
 	AgentSession  *AgentSession     `json:"agent_session"`
 }
 
-// AgentRow is one live agent from session.snapshot.
 type AgentRow struct {
 	PaneRow
 	StateChangeSeq uint64 `json:"state_change_seq"`
@@ -104,7 +100,7 @@ func FocusWorkspaceContext(ctx context.Context, workspaceID string) error {
 // FocusAgentContext focuses the tab that hosts a live agent. It does not focus the agent pane.
 func FocusAgentContext(ctx context.Context, tabID string) error {
 	if tabID == "" {
-		return fmt.Errorf("hseh focus: missing tab_id")
+		return fmt.Errorf("hseh herdr socket: missing tab_id")
 	}
 	_, err := callContext(ctx, "tab.focus", map[string]any{"tab_id": tabID}, nil)
 	return err

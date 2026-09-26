@@ -24,7 +24,6 @@ func SameContinuityWitness(stored, live ContinuityWitness) bool {
 		stored.BootTime == live.BootTime
 }
 
-// ReadContinuityWitnessFromConn reads peer identity from the live API connection.
 func ReadContinuityWitnessFromConn(conn net.Conn, socketPath string) (ContinuityWitness, error) {
 	unixConn, ok := conn.(*net.UnixConn)
 	if !ok {

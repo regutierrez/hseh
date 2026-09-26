@@ -92,8 +92,14 @@ func requireExistingDir(path string) (string, error) {
 		return "", err
 	}
 	info, err := os.Stat(canonical)
-	if err != nil || !info.IsDir() {
-		return "", fmt.Errorf("working directory does not exist: %s", path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("working directory does not exist: %s", path)
+		}
+		return "", fmt.Errorf("working directory %s: %w", path, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("working directory is not a directory: %s", path)
 	}
 	return canonical, nil
 }

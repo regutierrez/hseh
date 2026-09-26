@@ -102,8 +102,6 @@ func validateDefinition(def Definition) error {
 	return validateDefinitionTabs(def)
 }
 
-// Name required, command or panes, at most 4 panes, split down/right,
-// omitted ratio is an even split.
 func validateDefinitionTabs(def Definition) error {
 	label, source := def.Name, def.SourceFile
 	for i, tab := range def.Tabs {
@@ -317,7 +315,6 @@ func resolveDefinitionDir(def Definition) (string, error) {
 	return canonical, nil
 }
 
-// LoadDefinitions reads valid *.toml files from the plugin spaces directory.
 func LoadDefinitions(dir string) ([]Definition, []string) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

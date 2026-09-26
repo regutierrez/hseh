@@ -25,7 +25,6 @@ type AssociationState struct {
 	Unresolved []AssociationRecord     `json:"unresolved"`
 }
 
-// AssociationFilePath is where a session's associations are persisted.
 func AssociationFilePath(stateDir string) string {
 	return filepath.Join(config.SessionHistoryDir(stateDir), "associations.json")
 }
@@ -74,10 +73,6 @@ func WriteAssociationFile(stateDir string, state AssociationState) error {
 }
 
 func associationWitnessMismatch(state AssociationState, live herdr.ContinuityWitness) bool {
-	fresh := state.Witness.PeerPID == 0 && state.Witness.PeerStartTime == "" && len(state.Records) == 0
-	if fresh {
-		return false
-	}
 	return !herdr.SameContinuityWitness(state.Witness, live)
 }
 
@@ -140,8 +135,6 @@ func LoadReconciledAssociationState(stateDir string, live herdr.ContinuityWitnes
 	}
 	return reconcileAssociationState(state, live), nil
 }
-
-const recoverUsage = "exactly one of --workspace <live-workspace-id> or --create is required"
 
 // RecoveryHintLines is the tag plus the exact commands that resolve a stale identity.
 func RecoveryHintLines(definitionID string) []string {

@@ -30,7 +30,7 @@ func TestFocusHerdrAgentContextRejectsMissingTabID(t *testing.T) {
 	socketPath, _ := hsehtest.Start(t, server)
 	t.Setenv("HERDR_SOCKET_PATH", socketPath)
 	err := herdr.FocusAgentContext(context.Background(), "")
-	if err == nil || !strings.Contains(err.Error(), "hseh focus: missing tab_id") {
+	if err == nil || !strings.Contains(err.Error(), "hseh herdr socket: missing tab_id") {
 		t.Fatalf("got %v", err)
 	}
 	if methods := server.Methods(); len(methods) != 0 {

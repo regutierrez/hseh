@@ -19,7 +19,6 @@ const (
 	actionReconnect = "reconnect"
 )
 
-// OpenResult is the caller-visible outcome of create-or-focus.
 type OpenResult struct {
 	Action       string
 	WorkspaceID  string
@@ -194,7 +193,6 @@ func openLocked(ctx context.Context, definitionID string) (OpenResult, error) {
 	return createSpace(ctx, stateDir, state, def)
 }
 
-// Open focuses, adopts, or creates a definition in the current Herdr server lifetime.
 func Open(ctx context.Context, definitionID string) (OpenResult, error) {
 	definitionID = strings.TrimSpace(definitionID)
 	if definitionID == "" {

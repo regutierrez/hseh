@@ -22,7 +22,7 @@ func applyLayout(ctx context.Context, def Definition, dirs [][]string, workspace
 	for i, tab := range def.Tabs {
 		tabRoot := rootPaneID
 		if i == 0 {
-			if dir := dirs[i][0]; dir != "" && dir != def.ResolvedDir {
+			if dir := dirs[i][0]; dir != def.ResolvedDir {
 				_, tabRoot, err = herdr.CreateTab(ctx, workspaceID, tab.Name, dir, true)
 				if err != nil {
 					return fmt.Errorf("hseh create %s: tab.create %q: %w", def.ID, tab.Name, err)

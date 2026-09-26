@@ -1,4 +1,4 @@
-package herdr_test
+package herdr
 
 import (
 	"testing"

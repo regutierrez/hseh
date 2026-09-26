@@ -13,7 +13,6 @@ import (
 	"github.com/regutierrez/hseh/internal/lockfile"
 )
 
-// useTestSession points Open at the fake server and the test's own state and config dirs.
 func useTestSession(t *testing.T, socket, state, config string) {
 	t.Helper()
 	t.Setenv("HERDR_SOCKET_PATH", socket)

@@ -9,6 +9,8 @@ import (
 	"github.com/regutierrez/hseh/internal/herdr"
 )
 
+const recoverUsage = "exactly one of --workspace <live-workspace-id> or --create is required"
+
 // Recover reconnects or creates an identity left unresolved after a Herdr restart.
 // Exactly one of workspaceID or create must be given.
 func Recover(ctx context.Context, definitionID, workspaceID string, create bool) (OpenResult, error) {
